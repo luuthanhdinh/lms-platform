@@ -3,11 +3,15 @@
   "permissions": {
     "allow": [
       "Bash(git:*)",
-      "Bash(dotnet:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet ef:*)",
+      "Bash(dotnet run:*)",
       "Bash(pnpm:*)",
       "Bash(npm:*)",
       "Bash(python .claude/orchestrate.py)",
       "Bash(bash .claude/skills/backend-dev/check-patterns.sh:*)",
+      "Bash(bash .claude/skills/tenant-isolation/audit.sh:*)",
       "Read(**)",
       "Write(src/**)",
       "Write(frontend/**)",
@@ -16,26 +20,41 @@
       "Write(.claude/contracts.md)",
       "Write(.claude/task-graph.json)",
       "Write(.claude/review-report.md)",
+      "Write(.claude/security-report.md)",
+      "Write(.claude/tenant-audit.md)",
+      "Write(.claude/run-summary.json)",
       "Write(.claude-worktrees/**)"
     ],
     "deny": [
       "Bash(rm -rf:*)",
       "Bash(curl:*)",
       "Bash(wget:*)",
+      "Bash(dotnet ef database drop:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)",
       "Write(.env*)",
+      "Write(**/appsettings.Production.json)",
       "Write(.claude/settings.json)",
-      "Write(.claude/CLAUDE.md)"
+      "Write(.claude/CLAUDE.md)",
+      "Write(.claude/agents/**)",
+      "Write(.claude/skills/**)",
+      "Write(.claude/commands/**)"
     ]
   },
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write",
+        "matcher": "Write(frontend/**)",
         "hooks": [
-          {
-            "type": "command",
-            "command": "if [ -d frontend ]; then (cd frontend && pnpm lint --fix 2>/dev/null) || true; fi"
-          }
+          { "type": "command",
+            "command": "(cd frontend && pnpm lint --fix 2>/dev/null) || true" }
+        ]
+      },
+      {
+        "matcher": "Write(src/**)",
+        "hooks": [
+          { "type": "command",
+            "command": "dotnet format --include $CLAUDE_TOOL_FILE_PATH 2>/dev/null || true" }
         ]
       }
     ]
