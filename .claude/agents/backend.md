@@ -6,9 +6,25 @@ description: >
   changes, idempotency, outbox.
 model: claude-sonnet-4-6
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob
-skills: [backend-dev, masstransit-events, tenant-isolation, llm-client, observability]
+skills: [backend-dev, masstransit-events, tenant-isolation, llm-client, observability, aspire-orchestration]
 max-turns: 60
 ---
+
+## Per-service project layout (always)
+
+```
+LMS.{Name}Service.Domain/          ← entities, value objects, domain events
+                                     no EF Core / MassTransit references
+LMS.{Name}Service.Infrastructure/  ← DbContext, EF configs, repos,
+                                     MassTransit consumers, outbox
+LMS.{Name}Service.Api/             ← Program.cs, endpoints, DI, validators
+LMS.{Name}Service.Migrator/        ← Worker — never call Migrate() from Api
+```
+
+Reference rule: `Api → Infrastructure → Domain → SharedKernel`.
+Never reverse. Never let `Domain` reference EF Core or MassTransit.
+Endpoints inject `DbContext` directly (CQRS-lite); no Repository
+abstraction unless the spec calls for it.
 
 ## Pre-flight (mandatory)
 
