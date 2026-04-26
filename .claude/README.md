@@ -48,13 +48,7 @@ A multi-agent system for the LMS platform: **one Opus master plans**,
 │   ├── reviewer.md                Sonnet · final code review
 │   ├── docs-writer.md             Haiku  · keeps docs/ in sync
 │   └── haiku-helper.md            Haiku  · tests/types/docstrings
-├── commands/                    ← user-invocable slash commands
-│   ├── plan.md                    /plan <feature>
-│   ├── ship.md                    /ship <feature>
-│   ├── review.md                  /review
-│   ├── audit-tenant.md            /audit-tenant
-│   ├── sync-docs.md               /sync-docs [ref]
-│   └── migrate.md                 /migrate <svc> <Name>
+├── commands/                    ← user-invocable slash commands (see Catalog below)
 └── skills/                      ← reusable patterns auto-loaded by agents
     ├── backend-dev/               .NET endpoint/service patterns + check-patterns.sh
     ├── frontend-dev/              React/Vite/Tailwind patterns
@@ -106,22 +100,76 @@ Then `security-auditor` → `reviewer` → optional `docs-writer`.
 
 ---
 
-## Full workflow
+## Command catalog
 
-### Three commands cover 95% of usage
+34 slash commands, grouped by what you're trying to do. Each is a
+markdown file under `commands/`; many delegate to a specific agent
++ skill so the file stays short.
+
+### Multi-agent pipeline (the headliners)
+| Command | Purpose |
+|---|---|
+| [/plan](commands/plan.md) `<feature>` | Master agent plans only. Writes `contracts.md` + `task-graph.json`. Stops. |
+| [/ship](commands/ship.md) `<feature>` | `/plan` → wait for approval → `orchestrate.py` → reviewer. Full pipeline. |
+| [/review](commands/review.md) | Re-run reviewer on the last task graph's branches. |
+
+### Daily flow
+| Command | Purpose |
+|---|---|
+| [/catchup](commands/catchup.md) | Status briefing: branch, recent commits, open PRs, in-flight subagent runs. |
+| [/triage](commands/triage.md) | Ranks the next thing to work on (review-blocked, failed tasks, assigned issues, drift). |
+| [/focus](commands/focus.md) | Lists unfinished work in current branch (TODO/FIXME/skipped tests/`any`) by severity. |
+| [/standup](commands/standup.md) | Yesterday/Today/Blockers from git + PR history. |
+| [/dump](commands/dump.md) | Local Markdown dump of branch state for handoff (no secrets, no auto-upload). |
+
+### Author + ship code
+| Command | Purpose |
+|---|---|
+| [/spec](commands/spec.md) `<feature>` | Tech spec to `docs/specs/spec-YYYYMMDD-{slug}.md` with the full LMS template. |
+| [/fix](commands/fix.md) `<symptom>` | Repro → failing test FIRST → minimal patch → verify. |
+| [/refactor](commands/refactor.md) `<smell>` | Pin behavior with characterization tests, small reversible steps, no behavior change. |
+| [/explain](commands/explain.md) `<file\|symbol\|flow>` | Read-only walkthrough with file:line citations, ≤25 lines. |
+| [/test](commands/test.md) `[scope]` | Auto-scopes tests to changed files (dotnet + pnpm in parallel). |
+| [/coverage](commands/coverage.md) `[svc]` | Runs coverage; surfaces uncovered scenarios (not a percent). |
+| [/perf](commands/perf.md) `<symptom>` | Profile, don't guess. N+1, indexes, EXPLAIN ANALYZE. Cache last. |
+| [/bench](commands/bench.md) `<Type.Method>` | BenchmarkDotNet skeleton + run; allocations + ratio vs baseline. |
+| [/commit](commands/commit.md) `[subject]` | Smart conventional commit; refuses secrets/binaries; never `--amend`. |
+| [/pr](commands/pr.md) `[--draft]` | Push + open PR with structured body (Summary/Changes/Test plan/Contracts). |
+
+### Backend specifics (LMS-aware)
+| Command | Purpose |
+|---|---|
+| [/scaffold-service](commands/scaffold-service.md) `<Name>` | 4-project layout (Domain/Infra/Api/Migrator), refs, NuGet, AppHost wiring, initial migration. |
+| [/migrate](commands/migrate.md) `<svc> <Name>` | Generate one EF migration via `db-migrator` (uses `-p Infra -s Migrator`). |
+| [/event-add](commands/event-add.md) `<Event> [pub] [cons,...]` | Lock a new MassTransit event via `events-architect`; updates `docs/events.md`. |
+| [/tenant-test](commands/tenant-test.md) `<METHOD> <path>` | Generate the 404-not-403 paired isolation test for any endpoint. |
+| [/audit-tenant](commands/audit-tenant.md) | Cross-codebase tenant-leak audit (script + architecture tests + spot-check). |
+| [/flag](commands/flag.md) `add\|remove\|list <Flag> [svc]` | Add/remove `[FeatureGate]`; Phase 3+ defaults `false`. |
+| [/log](commands/log.md) `<svc> [filter]` | Tail Aspire dashboard / OTEL logs filtered by service / tenant / trace. |
+
+### Knowledge + governance
+| Command | Purpose |
+|---|---|
+| [/onboard](commands/onboard.md) | Fresh-clone walkthrough: prereq check, doc reading order, run commands. |
+| [/adr](commands/adr.md) `<decision>` | New ADR with auto-numbering + project tone. |
+| [/sync-docs](commands/sync-docs.md) `[ref]` | Bring `docs/services/*.md`, `docs/events.md`, `docs/entities.md` in line with shipped code. |
+| [/diagram](commands/diagram.md) `<flow\|svc\|"events"\|"architecture">` | Mermaid sequence/flowchart/ER diagram saved to `docs/diagrams/`. |
+
+### Operations + safety
+| Command | Purpose |
+|---|---|
+| [/rollback](commands/rollback.md) `migration\|release\|flag <target>` | Generate rollback plan; never auto-executes. |
+| [/secrets](commands/secrets.md) `init\|list\|set\|rotate` | Wraps `dotnet user-secrets`; never prints values; refuses prod-shaped keys. |
+| [/realm-sync](commands/realm-sync.md) `export\|import\|diff` | Sync local Keycloak realm with `realms/*.json`. |
+| [/ai-cost](commands/ai-cost.md) `[days]` | LLM token + cost report per tenant/model with cache-hit ratio. |
+| [/cleanup](commands/cleanup.md) `[--apply]` | Sweep merged worktrees/branches/old artifacts; dry-run by default. |
+
+### Three commands cover 95% of feature work
 
 ```bash
 /plan <feature>        # plan only, stop. Review the artifacts.
 /ship <feature>        # plan → wait for approval → orchestrate → review
 /review                # re-run reviewer on existing branches
-```
-
-Specialised:
-
-```bash
-/migrate course AddCoursePublishedAt   # one-off EF migration
-/audit-tenant                          # cross-codebase tenant-leak audit
-/sync-docs [ref]                       # bring docs/ in line with shipped code
 ```
 
 ---
@@ -296,45 +344,80 @@ The orchestrator never auto-merges.
 
 ---
 
-## Smaller examples
+## Recipes
 
-### Just a migration
+A few common combinations that show how the commands compose.
+
+### Start of day
+
+```
+/catchup          # what's the state?
+/triage           # what should I do next?
+```
+
+### "I have a bug to fix"
+
+```
+/fix payment webhook returns 500 on retried delivery
+/test                          # verify scope green
+/commit                        # smart conventional commit
+/pr                            # PR with structured body
+```
+
+### "New feature, end-to-end"
+
+```
+/spec course publish + email enrollees      # write the spec doc
+/plan course publish + email enrollees      # master plans the DAG
+# review .claude/contracts.md + task-graph.json
+/ship course publish + email enrollees      # full pipeline
+/sync-docs                                   # docs catch up
+/cleanup                                     # remove merged worktrees
+```
+
+### "New microservice"
+
+```
+/scaffold-service Payment      # 4-project layout + AppHost wiring
+/migrate payment Initial       # already done by scaffold; verify
+/event-add PaymentCompleted payment enrollment,notification
+/plan checkout flow            # then build it on top
+```
+
+### "Performance investigation"
+
+```
+/perf course list slow above 1k courses
+/explain CourseService.ListAsync     # understand current shape
+/bench CourseService.ListAsync       # measure before
+# apply fix
+/bench CourseService.ListAsync       # measure after
+```
+
+### "Pre-release safety pass"
+
+```
+/audit-tenant                  # cross-codebase tenant-leak audit
+/coverage                      # gaps, not percent
+/focus                         # leftover TODOs in branch
+/ai-cost 7                     # any cost spikes?
+```
+
+### "Schema rollback"
+
+```
+/rollback migration course     # generates ROLLBACK.md
+# read it, run it manually
+```
+
+### "Just a migration"
 
 ```
 /migrate enrollment AddRefundedAtColumn
 ```
 
-Spawns `db-migrator` only. Generates the EF migration, round-trips it,
-applies to local Aspire Postgres, writes `MIGRATION.md`. No PR opened.
-
-### Periodic safety check
-
-```
-/audit-tenant
-```
-
-Runs `tenant-isolation/audit.sh` + architecture tests + spot-checks.
-Produces `.claude/tenant-audit.md` with severity-ranked findings.
-Good as a pre-release gate.
-
-### After-the-fact docs
-
-```
-/sync-docs main
-```
-
-`docs-writer` diffs `main...HEAD`, updates `docs/services/*.md`,
-`docs/events.md`, `docs/entities.md`. Adds a new ADR only if a novel
-pattern landed.
-
-### Re-run review on existing branches
-
-```
-/review
-```
-
-Reads the last `task-graph.json`, re-applies the reviewer skill.
-Useful after pushing fixes to one branch.
+Spawns `db-migrator` only. Generates the EF migration, round-trips
+it, applies to local Aspire Postgres, writes `MIGRATION.md`. No PR.
 
 ---
 
