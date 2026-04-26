@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.*" />
+    <PackageReference Include="Aspire.StackExchange.Redis" Version="9.*" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.*" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.*" />
+    <PackageReference Include="FluentValidation.AspNetCore" Version="11.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\LMS.ServiceDefaults\LMS.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\..\..\LMS.Contracts\LMS.Contracts.csproj" />
+    <ProjectReference Include="..\LMS.IdentityService.Infrastructure\LMS.IdentityService.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

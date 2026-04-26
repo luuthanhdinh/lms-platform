@@ -1,243 +1,240 @@
 {
-  "feature": "LMS.Gateway — YARP reverse proxy with Keycloak JWT, per-tenant Redis rate limiting, header forwarding, CORS, health",
+  "feature": "LMS.IdentityService — user profile, tenant config, invites, role mgmt (Phase 1 service #2)",
   "phase": 1,
-  "complexity": "M",
+  "complexity": "L",
   "contracts_ref": ".claude/contracts.md",
   "tasks": [
     {
       "id": "T1",
-      "agent": "backend",
-      "title": "Scaffold LMS.Gateway project + ServiceDefaults wiring",
-      "spec": "Create src/gateway/LMS.Gateway/LMS.Gateway.csproj (web SDK, net9.0, TreatWarningsAsErrors). Reference LMS.ServiceDefaults. Add NuGet packages: Yarp.ReverseProxy 2.*, Microsoft.AspNetCore.Authentication.JwtBearer 9.*, StackExchange.Redis 2.*, Aspire.StackExchange.Redis 9.*, Microsoft.AspNetCore.RateLimiting (built-in). Create Program.cs skeleton that calls builder.AddServiceDefaults(); var app = builder.Build(); app.MapDefaultEndpoints(); app.Run();. Create empty appsettings.json + appsettings.Development.json. Add the project to the solution file. NO YARP / auth / rate limiting yet — only compilable scaffold.",
+      "title": "Lock UserRegistered + UserDeactivated event records in LMS.Contracts",
+      "agent": "events-architect",
+      "description": "Add (or verify) the two MassTransit event records exactly per docs/events.md and contracts.md.",
+      "spec": "Create/verify records in src/LMS.Contracts/Identity/, namespace LMS.Contracts.Identity. Shapes: UserRegistered(Guid UserId, Guid TenantId, string Email, string DisplayName, DateTimeOffset OccurredAt); UserDeactivated(Guid UserId, Guid TenantId, Guid DeactivatedBy, DateTimeOffset OccurredAt). No inline event definitions allowed elsewhere.",
       "files": [
-        "src/gateway/LMS.Gateway/LMS.Gateway.csproj",
-        "src/gateway/LMS.Gateway/Program.cs",
-        "src/gateway/LMS.Gateway/appsettings.json",
-        "src/gateway/LMS.Gateway/appsettings.Development.json",
-        "src/gateway/LMS.Gateway/Properties/launchSettings.json",
-        "LMS.sln"
+        "src/LMS.Contracts/Identity/UserRegistered.cs",
+        "src/LMS.Contracts/Identity/UserDeactivated.cs",
+        "src/LMS.Contracts/LMS.Contracts.csproj"
       ],
       "depends_on": [],
-      "branch": "feature/gateway-T1-scaffold",
-      "worktree": ".claude-worktrees/T1-gateway-scaffold",
+      "branch": "feature/identity-T1-events",
+      "worktree": ".claude-worktrees/T1-identity-events",
       "timeout_minutes": 20,
-      "acceptance": [
-        "dotnet build src/gateway/LMS.Gateway/LMS.Gateway.csproj",
-        "dotnet run --project src/gateway/LMS.Gateway -- --urls http://localhost:0 (smoke: /health returns 200)"
-      ]
+      "acceptance": ["dotnet build src/LMS.Contracts/LMS.Contracts.csproj"]
     },
     {
       "id": "T2",
-      "agent": "gateway-ops",
-      "title": "YARP config + routes for all Phase 1 services",
-      "spec": "Add AddReverseProxy().LoadFromConfig(...) to Program.cs. Place ReverseProxy section in appsettings.json with the exact 8 routes locked in contracts.md (identity, courses, content, enrollment, progress, assessment, certificate, verify). Verify route lives at /verify/{**rest} with AuthorizationPolicy=anonymous. Clusters use logical addresses http://{name} resolved by Aspire service discovery. Map MapReverseProxy() AFTER UseAuthentication/UseAuthorization (which T3 adds). Include path forwarding as-is. Strip inbound X-User-Id, X-Tenant-Id, X-Roles, Authorization on outbound for un-authenticated routes; trusted ones added by T3.",
+      "title": "Scaffold 4-project IdentityService solution layout",
+      "agent": "backend",
+      "description": "Create empty Domain/Infrastructure/Api/Migrator projects under src/services/LMS.IdentityService/, add to LMS.slnx, set ServiceDefaults + LMS.SharedKernel + LMS.Contracts references; no business code yet.",
+      "spec": "Use /scaffold-service IdentityService conventions. Output: 4 csproj + Program.cs stubs (Api + Migrator) compiling against ServiceDefaults. Migrator is a worker that runs IdentityDbContext.Database.Migrate() then exits 0.",
       "files": [
-        "src/gateway/LMS.Gateway/Program.cs",
-        "src/gateway/LMS.Gateway/appsettings.json"
+        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/LMS.IdentityService.Domain.csproj",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/LMS.IdentityService.Infrastructure.csproj",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/LMS.IdentityService.Api.csproj",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Program.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Migrator/LMS.IdentityService.Migrator.csproj",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Migrator/Program.cs",
+        "LMS.slnx"
       ],
-      "depends_on": ["T1"],
-      "branch": "feature/gateway-T2-yarp-routes",
-      "worktree": ".claude-worktrees/T2-yarp-routes",
+      "depends_on": [],
+      "branch": "feature/identity-T2-scaffold",
+      "worktree": ".claude-worktrees/T2-identity-scaffold",
       "timeout_minutes": 30,
-      "acceptance": [
-        "dotnet build",
-        "Smoke: GET /api/courses/foo with no JWT returns 401 (after T3) — for T2-only smoke, route table matches contracts.md exactly"
-      ]
+      "acceptance": ["dotnet build LMS.slnx"]
     },
     {
       "id": "T3",
-      "agent": "gateway-ops",
-      "title": "JWT validation (Keycloak JWKS) + header-forwarding YARP transform",
-      "spec": "Add AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer with Authority/Audience from config and RequireHttpsMetadata=!Development. Configure TokenValidationParameters.RoleClaimType. In OnTokenValidated, flatten Keycloak realm_access.roles[] into ClaimTypes.Role claims. Add fallback default authorization policy = RequireAuthenticatedUser; routes with AuthorizationPolicy=anonymous bypass. Register a YARP request transform that: (a) deletes any inbound X-User-Id, X-Tenant-Id, X-Roles, X-Correlation-Id headers from the outbound proxy request, (b) re-adds X-User-Id from sub, X-Tenant-Id from tenant_id, X-Roles from joined ClaimTypes.Role values when authenticated, (c) generates X-Correlation-Id if missing. Customize 401/403 with the JSON shape locked in contracts.md ({code, message}).",
+      "title": "Domain layer — entities, enums, repository interfaces",
+      "agent": "backend",
+      "description": "Implement UserProfile, TenantConfig, UserInvite (inheriting TenantEntity from SharedKernel), enums UserRole/TenantPlan, and repository contracts.",
+      "spec": "Per contracts.md entity table. Define: IUserProfileRepository, ITenantConfigRepository, IUserInviteRepository (async, take CancellationToken). Domain has no EF dependency.",
       "files": [
-        "src/gateway/LMS.Gateway/Program.cs",
-        "src/gateway/LMS.Gateway/Auth/KeycloakJwtOptions.cs",
-        "src/gateway/LMS.Gateway/Transforms/HeaderForwardingTransform.cs",
-        "src/gateway/LMS.Gateway/appsettings.json"
+        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Entities/UserProfile.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Entities/TenantConfig.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Entities/UserInvite.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Enums/UserRole.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Enums/TenantPlan.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Repositories/IUserProfileRepository.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Repositories/ITenantConfigRepository.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Repositories/IUserInviteRepository.cs"
       ],
       "depends_on": ["T2"],
-      "branch": "feature/gateway-T3-jwt-headers",
-      "worktree": ".claude-worktrees/T3-jwt-headers",
-      "timeout_minutes": 45,
-      "acceptance": [
-        "dotnet build",
-        "Manual: request without JWT to /api/courses/* → 401 with {code:'UNAUTHENTICATED'}",
-        "Manual: forged X-Tenant-Id header is replaced by trusted value from JWT"
-      ]
+      "branch": "feature/identity-T3-domain",
+      "worktree": ".claude-worktrees/T3-identity-domain",
+      "timeout_minutes": 30,
+      "acceptance": ["dotnet build src/services/LMS.IdentityService/LMS.IdentityService.Domain"]
     },
     {
       "id": "T4",
-      "agent": "gateway-ops",
-      "title": "Per-tenant Redis-backed fixed-window rate limiting",
-      "spec": "Wire StackExchange.Redis via Aspire (builder.AddRedisClient(\"redis\")). Configure AddRateLimiter with two policies: 'per-tenant' (FixedWindow, 60s, 600 req, partition by X-Tenant-Id from authenticated principal's tenant_id claim) and 'anonymous' (FixedWindow, 60s, 60 req, partition by RemoteIpAddress). Use a Redis-backed partition store (RedisRateLimiting NuGet OR custom IDistributedRateLimiter — implementer choice; the partition keys, windows, and limits are locked). Apply 'per-tenant' as the default to all proxied routes; the verify route uses 'anonymous'. Exempt /health, /health/live, /health/ready. On rejection emit 429 with body {code:'RATE_LIMITED', message, retryAfterSeconds} and Retry-After header. All knobs configurable under RateLimit: section per contracts.md.",
+      "title": "Infrastructure — IdentityDbContext, configurations, repositories, MassTransit",
+      "agent": "backend",
+      "description": "EF Core DbContext with global TenantId filter, fluent configurations, repository implementations, MassTransit registration with EF Core transactional outbox, ITenantContext implementation reading X-Tenant-Id.",
+      "spec": "Per tenant-isolation skill. Schema 'identity'. Configure indexes per contracts.md. Register repositories + ITenantContext (HttpContextAccessor-based) + MassTransit (AddEntityFrameworkOutbox<IdentityDbContext>). NO consumers in Phase 1.",
       "files": [
-        "src/gateway/LMS.Gateway/Program.cs",
-        "src/gateway/LMS.Gateway/RateLimiting/TenantRateLimitPolicy.cs",
-        "src/gateway/LMS.Gateway/RateLimiting/AnonymousRateLimitPolicy.cs",
-        "src/gateway/LMS.Gateway/RateLimiting/RedisPartitionStore.cs",
-        "src/gateway/LMS.Gateway/appsettings.json"
+        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/IdentityDbContext.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/Configurations/UserProfileConfiguration.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/Configurations/TenantConfigConfiguration.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/Configurations/UserInviteConfiguration.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/Repositories/UserProfileRepository.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/Repositories/TenantConfigRepository.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/Repositories/UserInviteRepository.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Tenancy/HttpTenantContext.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/DependencyInjection.cs"
       ],
-      "depends_on": ["T3"],
-      "branch": "feature/gateway-T4-rate-limit",
-      "worktree": ".claude-worktrees/T4-rate-limit",
+      "depends_on": ["T1", "T3"],
+      "branch": "feature/identity-T4-infra",
+      "worktree": ".claude-worktrees/T4-identity-infra",
       "timeout_minutes": 60,
-      "acceptance": [
-        "dotnet build",
-        "Integration: 601st req in 60s window with same X-Tenant-Id → 429 with Retry-After",
-        "Integration: different tenants share neither bucket"
-      ]
+      "acceptance": ["dotnet build src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure"]
     },
     {
       "id": "T5",
-      "agent": "backend",
-      "title": "CORS policy 'frontend'",
-      "spec": "AddCors with policy 'frontend' reading Cors:AllowedOrigins (default ['http://localhost:5173']) AllowAnyHeader, AllowAnyMethod, AllowCredentials, preflight 600s. Call app.UseCors('frontend') BEFORE app.UseAuthentication(). Can run in parallel with T4 — only modifies different sections of Program.cs (CORS lines + Cors: config block) and a separate config key, but to avoid Program.cs conflict scheduler should serialize Program.cs-touching tasks (T2→T3→T4→T5) OR use a dedicated CorsSetup extension. Implementer: place CORS wiring in src/gateway/LMS.Gateway/Cors/CorsExtensions.cs and call from Program.cs at a single insertion point so the diff is small.",
+      "title": "Initial EF Core migration 20260427000001_InitialIdentity",
+      "agent": "db-migrator",
+      "description": "Generate initial migration covering user_profiles, tenant_configs, user_invites + outbox tables.",
+      "spec": "dotnet ef migrations add InitialIdentity. Confirm reversible (Down). Include MassTransit outbox tables. Filename per contracts.md.",
       "files": [
-        "src/gateway/LMS.Gateway/Program.cs",
-        "src/gateway/LMS.Gateway/Cors/CorsExtensions.cs",
-        "src/gateway/LMS.Gateway/appsettings.json"
+        "src/services/LMS.IdentityService/LMS.IdentityService.Migrator/Migrations/20260427000001_InitialIdentity.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Migrator/Migrations/IdentityDbContextModelSnapshot.cs"
       ],
       "depends_on": ["T4"],
-      "branch": "feature/gateway-T5-cors",
-      "worktree": ".claude-worktrees/T5-cors",
-      "timeout_minutes": 20,
+      "branch": "feature/identity-T5-migration",
+      "worktree": ".claude-worktrees/T5-identity-migration",
+      "timeout_minutes": 30,
       "acceptance": [
-        "dotnet build",
-        "Manual: OPTIONS preflight from http://localhost:5173 → 204 with Access-Control-Allow-* headers"
+        "dotnet ef migrations list --project src/services/LMS.IdentityService/LMS.IdentityService.Migrator",
+        "dotnet build"
       ]
     },
     {
       "id": "T6",
+      "title": "API layer — Minimal API endpoints, validators, header auth, error mapping",
       "agent": "backend",
-      "title": "Health endpoints + JWKS/Redis readiness checks",
-      "spec": "Confirm app.MapDefaultEndpoints() exposes /health, /health/ready (tag 'ready'), /health/live. Add HealthCheck for Redis (AspNetCore.HealthChecks.Redis or built-in) tagged 'ready'. Add a custom JwksHealthCheck that GETs {Keycloak:Authority}/protocol/openid-connect/certs with a 2s timeout, tagged 'ready'. Both must be exempt from auth and rate limiting (configure endpoint metadata: AllowAnonymous + DisableRateLimiting). Add /health/live with no checks (process-up only).",
+      "description": "Implement all 9 endpoints per contracts.md, FluentValidation validators, header-trust authentication handler, role-based authorization, Result<T> → ProblemDetails mapping, OpenAPI.",
+      "spec": "Endpoint groups: /profile/me, /profile, /users, /users/invite, /users/{id}/role, /users/{id}/deactivate, /tenant. FluentValidation; RFC7807 ValidationProblem; non-validation errors as {code,message}. Publish UserRegistered (insert path) and UserDeactivated via IPublishEndpoint inside SaveChanges (outbox). DO NOT add JwtBearer; only HeaderAuthenticationHandler that fabricates ClaimsPrincipal from X-User-Id/X-Tenant-Id/X-Roles. Role wire form is kebab-case lowercase.",
       "files": [
-        "src/gateway/LMS.Gateway/Program.cs",
-        "src/gateway/LMS.Gateway/Health/JwksHealthCheck.cs"
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Endpoints/ProfileEndpoints.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Endpoints/UsersEndpoints.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Endpoints/TenantEndpoints.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Validators/UpsertProfileRequestValidator.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Validators/UpdateProfileRequestValidator.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Validators/InviteUserRequestValidator.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Validators/UpdateTenantRequestValidator.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Auth/HeaderAuthenticationHandler.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Auth/RoleAuthorizationPolicies.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/ErrorHandling/ResultExtensions.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Contracts/Dtos.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Program.cs"
       ],
-      "depends_on": ["T1"],
-      "branch": "feature/gateway-T6-health",
-      "worktree": ".claude-worktrees/T6-health",
-      "timeout_minutes": 25,
+      "depends_on": ["T4"],
+      "branch": "feature/identity-T6-api",
+      "worktree": ".claude-worktrees/T6-identity-api",
+      "timeout_minutes": 90,
       "acceptance": [
-        "dotnet build",
-        "GET /health/live → 200 always",
-        "GET /health/ready with Redis down → 503"
+        "dotnet build src/services/LMS.IdentityService/LMS.IdentityService.Api"
       ]
     },
     {
       "id": "T7",
+      "title": "Aspire AppHost wiring — register identity-migrator + identity",
       "agent": "gateway-ops",
-      "title": "Aspire AppHost wiring for gateway",
-      "spec": "Edit src/LMS.AppHost/Program.cs. Add Projects.LMS_Gateway reference exactly once with .WithReference(keycloak), .WithReference(redis), and .WithReference(...) for each of the 7 Phase 1 services (identity, courses, content, enrollment, progress, assessment, certificate) so YARP service discovery resolves http://{name}. Use .WaitFor(keycloak).WaitFor(redis) so the gateway starts after dependencies are ready. Add the gateway project reference to LMS.AppHost.csproj. Do NOT change the order of other resources. Note: this task only requires the gateway project to compile (T1) — it does not depend on T2–T6 logic; AppHost wiring is independent.",
+      "description": "Add Postgres database, migrator project, api project, RabbitMQ + Redis references, gateway.WithReference(identity).",
+      "spec": "Modify src/LMS.AppHost/Program.cs per contracts.md AppHost block. Resource names locked: 'identity-migrator', 'identity'. AppHost project references for both new projects added. Api WaitForCompletion(migrator).",
       "files": [
         "src/LMS.AppHost/Program.cs",
         "src/LMS.AppHost/LMS.AppHost.csproj"
       ],
-      "depends_on": ["T1"],
-      "branch": "feature/gateway-T7-apphost",
-      "worktree": ".claude-worktrees/T7-apphost",
-      "timeout_minutes": 20,
-      "acceptance": [
-        "dotnet build src/LMS.AppHost",
-        "Aspire dashboard shows gateway resource with healthy references"
-      ]
+      "depends_on": ["T5", "T6"],
+      "branch": "feature/identity-T7-apphost",
+      "worktree": ".claude-worktrees/T7-identity-apphost",
+      "timeout_minutes": 30,
+      "acceptance": ["dotnet build src/LMS.AppHost"]
     },
     {
       "id": "T8",
+      "title": "Unit + integration tests (xUnit + WebApplicationFactory + Testcontainers Postgres)",
       "agent": "tester",
-      "title": "Integration tests — routing, JWT, header forwarding, rate limit, CORS, health",
-      "spec": "Use xunit-integration skill: WebApplicationFactory<Program> against LMS.Gateway with Testcontainers Redis + Keycloak stub. Tests:\n  1. RoutingTests — each Phase 1 route prefix proxies to a stub backend with the path preserved.\n  2. JwtTests — missing token → 401 {code:'UNAUTHENTICATED'}; expired token → 401; valid token → 200 + downstream sees X-User-Id, X-Tenant-Id, X-Roles matching claims.\n  3. HeaderForgeryTests — inbound X-Tenant-Id is overwritten by JWT-derived value, never trusted.\n  4. RateLimitTests — 601st request within 60s for same tenant → 429 {code:'RATE_LIMITED'} with Retry-After; different tenants do not share bucket; /health* exempt.\n  5. AnonymousVerifyTests — /verify/{id} reachable without JWT, partitioned by IP.\n  6. CorsTests — preflight from configured origin → 204 + Access-Control-Allow-Credentials.\n  7. HealthTests — /health/live always 200; /health/ready turns 503 when Redis stopped.\nLand in tests/LMS.IntegrationTests/Gateway/. Tag with [Trait(\"Category\",\"Gateway\")].",
+      "description": "Cover: header trust 401/403, tenant isolation (cross-tenant 404), upsert idempotency, UserRegistered published once, UserDeactivated publish, invite domain enforcement, role mapping case-insensitivity, validation 400.",
+      "spec": "Use xunit-integration skill. IdentityFactory : WebApplicationFactory<Program>. Testcontainers Postgres + MassTransit InMemoryTestHarness. Files: ProfileEndpointsTests, UsersEndpointsTests, TenantEndpointsTests, TenantIsolationTests, HeaderAuthTests. Categories: Tenant, Endpoints.",
       "files": [
-        "tests/LMS.IntegrationTests/Gateway/RoutingTests.cs",
-        "tests/LMS.IntegrationTests/Gateway/JwtTests.cs",
-        "tests/LMS.IntegrationTests/Gateway/HeaderForgeryTests.cs",
-        "tests/LMS.IntegrationTests/Gateway/RateLimitTests.cs",
-        "tests/LMS.IntegrationTests/Gateway/AnonymousVerifyTests.cs",
-        "tests/LMS.IntegrationTests/Gateway/CorsTests.cs",
-        "tests/LMS.IntegrationTests/Gateway/HealthTests.cs",
-        "tests/LMS.IntegrationTests/Gateway/Fixtures/GatewayFactory.cs",
-        "tests/LMS.IntegrationTests/Gateway/Fixtures/StubBackend.cs",
-        "tests/LMS.IntegrationTests/Gateway/Fixtures/KeycloakStub.cs"
+        "tests/LMS.IntegrationTests/Identity/Fixtures/IdentityFactory.cs",
+        "tests/LMS.IntegrationTests/Identity/ProfileEndpointsTests.cs",
+        "tests/LMS.IntegrationTests/Identity/UsersEndpointsTests.cs",
+        "tests/LMS.IntegrationTests/Identity/TenantEndpointsTests.cs",
+        "tests/LMS.IntegrationTests/Identity/TenantIsolationTests.cs",
+        "tests/LMS.IntegrationTests/Identity/HeaderAuthTests.cs",
+        "tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj"
       ],
-      "depends_on": ["T2", "T3", "T4", "T5", "T6"],
-      "branch": "feature/gateway-T8-tests",
-      "worktree": ".claude-worktrees/T8-tests",
-      "timeout_minutes": 75,
+      "depends_on": ["T6", "T7"],
+      "branch": "feature/identity-T8-tests",
+      "worktree": ".claude-worktrees/T8-identity-tests",
+      "timeout_minutes": 90,
       "acceptance": [
-        "dotnet test tests/LMS.IntegrationTests --filter Category=Gateway",
-        "All 7 test classes green"
+        "dotnet test tests/LMS.IntegrationTests --filter Category=Endpoints",
+        "dotnet test tests/LMS.IntegrationTests --filter Category=Tenant"
       ]
     },
     {
       "id": "T9",
+      "title": "Haiku helper — DTO/test data builders + xmldoc polish",
       "agent": "haiku-helper",
-      "title": "Smoke + happy-path unit tests for transforms, header utils, rate-limit policy keys",
-      "spec": "Pure xUnit tests (no Testcontainers): HeaderForwardingTransform_StripsInboundForgery, HeaderForwardingTransform_AddsTrustedHeaders, TenantRateLimitPolicy_PartitionsByTenant, AnonymousRateLimitPolicy_PartitionsByIp, JwksHealthCheck_TimeoutReturnsUnhealthy. Land in tests/LMS.IntegrationTests/Gateway/Unit/.",
+      "description": "Cheap follow-up to T6: builders for UpsertProfileRequest/InviteUserRequest, xmldoc on public DTOs, OpenAPI summary strings.",
+      "spec": "Add Builders/ folder under tests/LMS.IntegrationTests/Identity/. Add /// xmldoc on DTO records and endpoint group methods. No behaviour changes.",
       "files": [
-        "tests/LMS.IntegrationTests/Gateway/Unit/HeaderForwardingTransformTests.cs",
-        "tests/LMS.IntegrationTests/Gateway/Unit/RateLimitPolicyTests.cs",
-        "tests/LMS.IntegrationTests/Gateway/Unit/JwksHealthCheckTests.cs"
+        "tests/LMS.IntegrationTests/Identity/Builders/UpsertProfileRequestBuilder.cs",
+        "tests/LMS.IntegrationTests/Identity/Builders/InviteUserRequestBuilder.cs",
+        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Contracts/Dtos.cs"
       ],
-      "depends_on": ["T3", "T4", "T6"],
-      "branch": "feature/gateway-T9-unit-tests",
-      "worktree": ".claude-worktrees/T9-unit-tests",
-      "timeout_minutes": 30,
-      "acceptance": [
-        "dotnet test --filter FullyQualifiedName~Gateway.Unit"
-      ]
+      "depends_on": ["T6"],
+      "branch": "feature/identity-T9-haiku",
+      "worktree": ".claude-worktrees/T9-identity-haiku",
+      "timeout_minutes": 20,
+      "acceptance": ["dotnet build"]
     },
     {
       "id": "T10",
+      "title": "Security audit — tenant isolation, header trust, no JWT re-validation",
       "agent": "security-auditor",
-      "title": "Security audit — JWT, header trust boundary, rate-limit bypass",
-      "spec": "Audit the gateway implementation for: (1) any path that proxies a request without re-stripping inbound X-User-Id/X-Tenant-Id/X-Roles/Authorization, (2) JWT validation skipping or downgrade, (3) rate-limit bypass via header manipulation or path casing, (4) CORS misconfiguration that allows credential leakage to wildcard origins, (5) health endpoints leaking info. Produce findings inline as a final agent message; flag any contract deviation. Cross-check against contracts.md.",
-      "files": [
-        "src/gateway/LMS.Gateway/**"
-      ],
-      "depends_on": ["T2", "T3", "T4", "T5", "T6", "T7"],
-      "branch": "feature/gateway-T10-security",
-      "worktree": ".claude-worktrees/T10-security",
+      "description": "Run tenant-isolation + audit-tenant skills. Verify every entity has TenantEntity, every DbSet has filter, no AddJwtBearer in service, no Authorization header read, no IgnoreQueryFilters.",
+      "spec": "Produce findings inline; block reviewer until clean.",
+      "files": [],
+      "depends_on": ["T6", "T8"],
+      "branch": "feature/identity-T10-secaudit",
+      "worktree": ".claude-worktrees/T10-identity-secaudit",
       "timeout_minutes": 30,
       "acceptance": [
-        "Security findings report with severity, no Critical/High open"
+        "! grep -rn 'AddJwtBearer' src/services/LMS.IdentityService",
+        "! grep -rn 'IgnoreQueryFilters' src/services/LMS.IdentityService"
       ]
     },
     {
       "id": "T11",
+      "title": "Code review against contracts.md and absolute rules",
       "agent": "reviewer",
-      "title": "Final code review against contracts.md + LMS absolute rules",
-      "spec": "Review all files changed in T1–T10. Verify: (a) JWT validated only at gateway, downstream never re-validates, (b) header names match contracts.md exactly, (c) feature flags not introduced (gateway has none), (d) no MassTransit usage in gateway, (e) all routes match the locked YARP table, (f) tests cover each acceptance criterion. Use code-reviewer skill output format.",
-      "files": [
-        "src/gateway/LMS.Gateway/**",
-        "src/LMS.AppHost/Program.cs",
-        "tests/LMS.IntegrationTests/Gateway/**"
-      ],
-      "depends_on": ["T8", "T9", "T10"],
-      "branch": "feature/gateway-T11-review",
-      "worktree": ".claude-worktrees/T11-review",
+      "description": "Run code-reviewer skill. Verify shapes match contracts.md exactly, events match LMS.Contracts records, role wire values lowercase, error envelope conformant.",
+      "spec": "Block on any contract or absolute-rule violation.",
+      "files": [],
+      "depends_on": ["T7", "T8", "T9", "T10"],
+      "branch": "feature/identity-T11-review",
+      "worktree": ".claude-worktrees/T11-identity-review",
       "timeout_minutes": 30,
-      "acceptance": [
-        "Reviewer report with no contract or absolute-rule violations"
-      ]
+      "acceptance": ["dotnet build", "dotnet test tests/LMS.IntegrationTests"]
     },
     {
       "id": "T12",
+      "title": "Docs update — services/identity.md + architecture.md",
       "agent": "docs-writer",
-      "title": "Update docs/architecture.md gateway section + add docs/services/gateway.md",
-      "spec": "Reflect the final implementation: locked headers, route table, rate-limit policy, CORS, health. Add a new docs/services/gateway.md following the per-service template (Port, ADRs, Responsibility, Endpoints, Key flows, Events published/consumed=None, Entities=None). Cross-link from docs/architecture.md.",
+      "description": "Move docs/identity.md → docs/services/identity.md per layout, mark Phase 1 implemented, document invite-acceptance-via-upsert, link ADR-001/002.",
+      "spec": "Reflect contract refinements (TENANT_NOT_PROVISIONED, kebab role wire form, invite-acceptance behaviour). Update architecture.md AppHost example with identity wiring.",
       "files": [
-        "docs/architecture.md",
-        "docs/services/gateway.md"
+        "docs/services/identity.md",
+        "docs/architecture.md"
       ],
       "depends_on": ["T11"],
-      "branch": "feature/gateway-T12-docs",
-      "worktree": ".claude-worktrees/T12-docs",
-      "timeout_minutes": 25,
-      "acceptance": [
-        "docs/services/gateway.md exists and matches shipped behavior",
-        "docs/architecture.md gateway section reflects locked contracts"
-      ]
+      "branch": "feature/identity-T12-docs",
+      "worktree": ".claude-worktrees/T12-identity-docs",
+      "timeout_minutes": 30,
+      "acceptance": ["test -f docs/services/identity.md"]
     }
   ]
 }
