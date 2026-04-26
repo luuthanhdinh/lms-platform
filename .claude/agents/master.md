@@ -77,6 +77,20 @@ _Hash: <sha256 of this file at lock time, filled by orchestrator>_
 }
 ```
 
+## Service-layout awareness
+
+Every relational service is split into 4 projects:
+`Domain` / `Infrastructure` / `Api` / `Migrator`. When planning:
+
+- Entity changes → `db-migrator` task targets Infrastructure + Migrator
+- DbContext / EF config → backend task scoped to Infrastructure
+- Endpoints / DI / validators → backend task scoped to Api
+- AppHost wiring (`WithReference` + `WaitForCompletion(migrator)`)
+  is its own task, owned by `gateway-ops` or a backend task that
+  explicitly lists `src/LMS.AppHost/Program.cs` in `files`
+- New service from scratch → schedule `/scaffold-service` style task
+  BEFORE any feature task
+
 ## Parallelism rules (enforce strictly)
 
 - `depends_on: []` → starts immediately
