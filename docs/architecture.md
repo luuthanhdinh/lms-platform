@@ -82,6 +82,39 @@ Phase 2+ resources (uncomment when starting Phase 2 sprint):
 
 ---
 
+## Gateway — JWT Trust Boundary
+
+> Full details: [docs/services/gateway.md](services/gateway.md)
+
+The gateway (`src/gateway/LMS.Gateway/`) is the **only** place JWTs are validated. All downstream services trust the forwarded headers injected by the gateway — they never hold or re-validate a JWT.
+
+### Forwarded header contract (immutable — all services depend on this)
+
+| Header | Source | When present |
+|---|---|---|
+| `X-User-Id` | JWT `sub` claim | Authenticated requests |
+| `X-Tenant-Id` | JWT `tenant_id` custom claim | Authenticated requests |
+| `X-Roles` | JWT `realm_access.roles[]`, comma-joined, no spaces | Authenticated requests |
+| `X-Correlation-Id` | Inbound or generated GUID | Always |
+
+**Inbound forgery prevention:** The gateway strips `X-User-Id`, `X-Tenant-Id`, `X-Roles`, and `Authorization` from every outbound proxied request before injecting trusted values from the validated JWT principal. A client cannot inject trusted headers.
+
+### Downstream auth pattern
+
+Every downstream service reads identity from forwarded headers — never from `HttpContext.User` or a JWT:
+
+```csharp
+// LMS.SharedKernel/Middleware/TenantMiddleware.cs — reads X-Tenant-Id
+// Endpoints read X-User-Id, X-Roles directly from request headers
+// No AddAuthentication / AddJwtBearer in any service — only in the gateway
+```
+
+### Anonymous route
+
+Only `/verify/{**rest}` (certificate verification link) is anonymous. All other 7 routes require a valid JWT.
+
+---
+
 ## ServiceDefaults — `LMS.ServiceDefaults/Extensions.cs`
 
 ```csharp

@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LMS.AppHost/LMS.AppHost.csproj" />
+    <Project Path="src/LMS.ServiceDefaults/LMS.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/src/gateway/">
+    <Project Path="src/gateway/LMS.Gateway/LMS.Gateway.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,113 @@
+# ─── .NET ────────────────────────────────────────────────────────────────────
+
+## Build outputs
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio / Rider
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.idea/
+*.DotSettings.user
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+!**/[Pp]ackages/build/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## Publish / release
+**/publish/
+**/PublishProfiles/
+
+## Roslyn / analyzers
+*.aps
+
+## Test results
+TestResults/
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+coverage*/
+lcov.info
+
+## Rider / JetBrains
+.idea/
+*.iml
+
+## BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+
+## User secrets (never commit)
+**/secrets.json
+
+## Aspire
+.aspire/
+
+# ─── React / Node ─────────────────────────────────────────────────────────────
+
+## Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+
+## Build output
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+## Environment files — never commit real secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.production
+
+## Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+## TypeScript
+*.tsbuildinfo
+
+## Vite / Rollup cache
+frontend/.cache/
+
+## Testing
+frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
+
+# ─── OS / editors ─────────────────────────────────────────────────────────────
+
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+
+.dockerignore
+
+# ─── CI / temp ────────────────────────────────────────────────────────────────
+
+.claude-worktrees/
+.claude/run-summary.json
