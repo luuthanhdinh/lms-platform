@@ -166,19 +166,20 @@ public enum ContentStatus { Pending, Processing, Ready, Failed }
 
 ---
 
-## EnrollmentService — `lms_enrollment`
+## EnrollmentService — `lms_enrollments`
 
 ```csharp
 public class Enrollment : TenantEntity
 {
     public Guid UserId { get; set; }
     public Guid CourseId { get; set; }
-    public EnrollmentStatus Status { get; set; } = EnrollmentStatus.Active;
-    public string? PaymentReference { get; set; }
-    public int SnapshotVersion { get; set; }           // pinned course version (ADR-005)
-    public DateTimeOffset EnrolledAt { get; set; } = DateTimeOffset.UtcNow;
+    public EnrollmentStatus Status { get; set; }           // Active, Completed, Suspended, Cancelled
+    public bool IsFree { get; set; }                       // denormalised from course at enrol time (Phase 1 stub)
+    public DateTimeOffset EnrolledAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
-    public DateTimeOffset? ExpiresAt { get; set; }
+    public DateTimeOffset? CancelledAt { get; set; }
+    public DateTimeOffset? SuspendedAt { get; set; }
+    public string? SuspensionReason { get; set; }          // e.g. "course-archived"
 }
 
 public class WaitlistEntry : TenantEntity
@@ -189,8 +190,15 @@ public class WaitlistEntry : TenantEntity
     public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
-public enum EnrollmentStatus { Pending, Active, Completed, Suspended }
+public enum EnrollmentStatus { Active = 0, Completed = 1, Suspended = 2, Cancelled = 3 }
 ```
+
+**Schema:** `enrollments`. **Indexes:**
+- Unique `(TenantId, UserId, CourseId)` filtered `WHERE Status = 0` (Active only; prevents duplicate active enrollment).
+- `(TenantId, UserId, Status)` for "list user enrollments".
+- `(TenantId, CourseId, Status)` for "course enrollment count / list".
+
+**Concurrency:** `xmin` via `.IsRowVersion()` (Postgres row version for optimistic locking).
 
 ---
 
