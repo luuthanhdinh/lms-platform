@@ -109,6 +109,23 @@ var assessment = builder.AddProject<Projects.LMS_AssessmentService_Api>("assessm
 
 gateway.WithReference(assessment);
 
+// CertificateService
+var certificateDb = postgres.AddDatabase("lms-certificate");
+var certificatePdfs = storage.AddBlobs("certificate-pdfs");
+
+var certificateMigrator = builder.AddProject<Projects.LMS_CertificateService_Migrator>("certificate-migrator")
+    .WithReference(certificateDb)
+    .WaitFor(certificateDb);
+
+var certificate = builder.AddProject<Projects.LMS_CertificateService_Api>("certificate")
+    .WithReference(certificateDb)
+    .WithReference(rabbitmq).WaitFor(rabbitmq)
+    .WithReference(certificatePdfs)
+    .WaitForCompletion(certificateMigrator)
+    .WaitFor(certificatePdfs);
+
+gateway.WithReference(certificate);
+
 // Services — uncomment as each service project is scaffolded
 
 // builder.AddProject<Projects.LMS_CourseService>("courses")

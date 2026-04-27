@@ -1,177 +1,221 @@
 {
-  "feature": "LMS.AssessmentService (Phase 1, service #7) — quiz/exam engine with Redis-backed sessions, MCQ/TrueFalse auto-grading, and AssessmentSubmitted publish",
+  "feature": "LMS.CertificateService — Phase 1 service #8: issue PDF certificates on CourseCompleted, anonymous verify, admin revoke.",
   "phase": 1,
   "complexity": "L",
   "tasks": [
     {
       "id": "T1",
       "agent": "events-architect",
-      "title": "Add AssessmentSubmitted + EssaySubmitted contracts",
-      "spec": "Create src/LMS.Contracts/Assessment/AssessmentSubmitted.cs and EssaySubmitted.cs matching the exact shapes locked in .claude/contracts.md section 3. AssessmentSubmitted: (Guid UserId, Guid AssessmentId, Guid CourseId, Guid TenantId, float Score, bool Passed, DateTimeOffset OccurredAt). EssaySubmitted: (Guid UserId, Guid SubmissionId, Guid AssessmentId, Guid TenantId, DateTimeOffset OccurredAt). Records, no body. Verify project compiles.",
+      "title": "Add CertificateIssued event to LMS.Contracts",
+      "spec": "Create src/LMS.Contracts/Certificate/CertificateIssued.cs as a sealed record with shape (Guid EventId, Guid TenantId, Guid CertificateId, Guid UserId, Guid CourseId, string CertificateNumber, Guid VerificationCode, DateTimeOffset IssuedAt, DateTimeOffset OccurredAt). XML doc-comment must call out idempotency key = EventId. Update docs/events.md routing table: add row 'CertificateIssued | CertificateService | NotificationWorker'. Do NOT modify any other event. Resolve Open Decision #3 by documenting Phase-1 vs Phase-4 split (CertificateIssued vs CredentialIssued) in the event-record XML doc.",
       "files": [
-        "src/LMS.Contracts/Assessment/AssessmentSubmitted.cs",
-        "src/LMS.Contracts/Assessment/EssaySubmitted.cs"
+        "src/LMS.Contracts/Certificate/CertificateIssued.cs",
+        "docs/events.md"
       ],
       "depends_on": [],
-      "branch": "feature/assessment-T1-events",
-      "worktree": ".claude-worktrees/T1-assessment-events",
-      "timeout_minutes": 15,
-      "acceptance": ["dotnet build src/LMS.Contracts/LMS.Contracts.csproj"]
+      "branch": "feature/cert-T1-event",
+      "worktree": ".claude-worktrees/T1-cert-event",
+      "timeout_minutes": 20,
+      "acceptance": [
+        "dotnet build src/LMS.Contracts/LMS.Contracts.csproj",
+        "test -f src/LMS.Contracts/Certificate/CertificateIssued.cs"
+      ]
     },
     {
       "id": "T2",
       "agent": "backend",
-      "title": "Scaffold 4-project AssessmentService skeleton + Domain entities/DTOs/enums",
-      "spec": "Create src/services/LMS.AssessmentService/{Domain,Infrastructure,Api,Migrator}/*.csproj per the standard layout in .claude/contracts.md section 1. Add all entity classes (Assessment, Question, AssessmentAttempt, AttemptAnswer, AssessmentSession), enums (QuestionType, GradingStatus), QuestionOption record, and all DTO records (CreateAssessmentRequest, CreateQuestionRequest, UpdateQuestionRequest, SubmitAnswersRequest, SubmittedAnswer, QuestionDto, AssessmentDto, SessionStartedDto, AssessmentResultDto, GradedAnswerDto, AttemptSummaryDto, AssessmentAnalyticsDto, QuestionStatDto) into LMS.AssessmentService.Domain. All TenantEntity descendants. Add solution-level references. NO endpoints / DbContext yet.",
+      "title": "Scaffold CertificateService 4-project layout",
+      "spec": "Use the /scaffold-service playbook. Create LMS.CertificateService.{Domain,Infrastructure,Api,Migrator} under src/services/LMS.CertificateService/. Domain references LMS.SharedKernel only. Infrastructure references Domain + LMS.Contracts + LMS.ServiceDefaults + EF Core + Npgsql + MassTransit + MassTransit.EntityFrameworkCore + QuestPDF + QRCoder + Azure.Storage.Blobs. Api references Infrastructure + LMS.ServiceDefaults + Aspire.Npgsql.EntityFrameworkCore.PostgreSQL + Aspire.Azure.Storage.Blobs + Microsoft.FeatureManagement.AspNetCore. Migrator references Infrastructure + LMS.ServiceDefaults. Add all four to LMS.slnx. Set TreatWarningsAsErrors. Empty Program.cs in Api with AddServiceDefaults + MapDefaultEndpoints stubs only — endpoints come in T7. Migrator IHostedService skeleton runs context.Database.MigrateAsync once. Port 5108 in launchSettings.json.",
       "files": [
-        "src/services/LMS.AssessmentService/LMS.AssessmentService.Domain/",
-        "src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/LMS.AssessmentService.Infrastructure.csproj",
-        "src/services/LMS.AssessmentService/LMS.AssessmentService.Api/LMS.AssessmentService.Api.csproj",
-        "src/services/LMS.AssessmentService/LMS.AssessmentService.Migrator/LMS.AssessmentService.Migrator.csproj",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/LMS.CertificateService.Domain.csproj",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/LMS.CertificateService.Infrastructure.csproj",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Api/LMS.CertificateService.Api.csproj",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Api/Program.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Api/Properties/launchSettings.json",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Migrator/LMS.CertificateService.Migrator.csproj",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Migrator/Program.cs",
         "LMS.slnx"
       ],
       "depends_on": [],
-      "branch": "feature/assessment-T2-scaffold",
-      "worktree": ".claude-worktrees/T2-assessment-scaffold",
+      "branch": "feature/cert-T2-scaffold",
+      "worktree": ".claude-worktrees/T2-cert-scaffold",
       "timeout_minutes": 30,
-      "acceptance": ["dotnet build src/services/LMS.AssessmentService/LMS.AssessmentService.Domain/LMS.AssessmentService.Domain.csproj"]
+      "acceptance": [
+        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Api/LMS.CertificateService.Api.csproj",
+        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Migrator/LMS.CertificateService.Migrator.csproj"
+      ]
     },
     {
       "id": "T3",
       "agent": "backend",
-      "title": "Infrastructure: AssessmentDbContext + EF config + Redis session store + grading service",
-      "spec": "Create AssessmentDbContext (schema 'assessments') in LMS.AssessmentService.Infrastructure/Data/. Apply global TenantId query filter via reflection over TenantEntity descendants. Configure jsonb conversion for Question.Options, xmin row version on all four entities, cascade deletes (Assessment->Question, AssessmentAttempt->AttemptAnswer), all indexes per contracts section 2. Implement IAssessmentSessionStore using StackExchange.Redis with key 'assessment:session:{sid}', JSON serialisation, TTL = TimeLimitSeconds+60 or DefaultSessionTtlSeconds. Implement IGradingService (pure function: grades MCQ/TrueFalse comparing SelectedOptionIndex to CorrectOptionIndex; ShortAnswer/Essay -> IsCorrect=null, points=0, GradingStatus=PendingReview). Add ITenantContext + DI extension AddAssessmentInfrastructure. Reference LMS.Contracts.",
+      "title": "Domain: Certificate entity, DTOs, abstractions",
+      "spec": "Per contracts.md sections 2, 5, 7. In LMS.CertificateService.Domain: Certificate entity (TenantEntity-derived) with CertificateNumber, TemplateId?, PdfStorageKey, RevokedAt, RevocationReason, Phase-4 placeholders; owned BlockchainAnchor; AnchorStatus enum. ICertificatePdfRenderer + CertificateRenderProfile record. IPdfStorage interface. CertificateNumberGenerator static helper (CERT-{yyyy}-{Crockford-base32 8-char of Id}). DTOs: CertificateDto, CertificateVerificationDto, RevokeCertificateRequest. FluentValidation validator for RevokeCertificateRequest (Reason: non-empty, <= 500). Unit tests covering CertificateNumberGenerator format + 10k uniqueness + validator.",
       "files": [
-        "src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/"
+        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Entities/Certificate.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Entities/BlockchainAnchor.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Entities/AnchorStatus.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Abstractions/ICertificatePdfRenderer.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Abstractions/IPdfStorage.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Numbering/CertificateNumberGenerator.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Dtos/CertificateDto.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Dtos/CertificateVerificationDto.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Dtos/RevokeCertificateRequest.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Validators/RevokeCertificateRequestValidator.cs"
       ],
       "depends_on": ["T2"],
-      "branch": "feature/assessment-T3-infra",
-      "worktree": ".claude-worktrees/T3-assessment-infra",
+      "branch": "feature/cert-T3-domain",
+      "worktree": ".claude-worktrees/T3-cert-domain",
       "timeout_minutes": 45,
-      "acceptance": ["dotnet build src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/"]
+      "acceptance": [
+        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Domain/LMS.CertificateService.Domain.csproj"
+      ]
     },
     {
       "id": "T4",
       "agent": "db-migrator",
-      "title": "Initial migration + Migrator host",
-      "spec": "Generate EF migration 20260427_001_InitialAssessmentSchema in LMS.AssessmentService.Infrastructure/Migrations creating schema 'assessments', tables (assessments, questions, assessment_attempts, attempt_answers) with all indexes from contracts section 2, plus MassTransit outbox/inbox/state tables in same schema. Implement Migrator Program.cs as IHostedService that calls Database.MigrateAsync once and exits 0 (Aspire WaitForCompletion pattern, mirrors ProgressService.Migrator).",
+      "title": "Initial EF migration for certificates schema",
+      "spec": "Per contracts.md section 2. CertificateDbContext in Infrastructure/Persistence/CertificateDbContext.cs with global TenantId filter via reflection over TenantEntity descendants, OwnsOne(BlockchainAnchor), xmin row-version, snake_case naming, schema 'certificates'. Indexes: filtered unique (TenantId, UserId, CourseId) WHERE revoked_at IS NULL; unique (TenantId, CertificateNumber); unique (VerificationCode); (TenantId, UserId, IssuedAt DESC). Add MassTransit EF outbox tables in same schema. Generate migration 20260427_001_InitialCertificateSchema. Wire Migrator IHostedService to apply migrations on startup.",
       "files": [
-        "src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/Migrations/",
-        "src/services/LMS.AssessmentService/LMS.AssessmentService.Migrator/"
+        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Persistence/CertificateDbContext.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Persistence/Configurations/CertificateConfiguration.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Migrations/20260427_001_InitialCertificateSchema.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Migrations/20260427_001_InitialCertificateSchema.Designer.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Migrations/CertificateDbContextModelSnapshot.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Migrator/MigrationsHostedService.cs"
       ],
       "depends_on": ["T3"],
-      "branch": "feature/assessment-T4-migration",
-      "worktree": ".claude-worktrees/T4-assessment-migration",
-      "timeout_minutes": 30,
+      "branch": "feature/cert-T4-migration",
+      "worktree": ".claude-worktrees/T4-cert-migration",
+      "timeout_minutes": 45,
       "acceptance": [
-        "dotnet build src/services/LMS.AssessmentService/LMS.AssessmentService.Migrator/",
-        "dotnet ef migrations list --project src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure"
+        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/LMS.CertificateService.Infrastructure.csproj",
+        "dotnet ef migrations list --project src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure --startup-project src/services/LMS.CertificateService/LMS.CertificateService.Migrator"
       ]
     },
     {
       "id": "T5",
       "agent": "backend",
-      "title": "MassTransit wiring + CourseArchived consumer (deactivate assessments)",
-      "spec": "In Infrastructure: register MassTransit with EF outbox over AssessmentDbContext, kebab-case endpoint formatter, RabbitMQ host, retry Intervals(1s,5s,30s). Implement CourseArchivedConsumer: sets Assessment.IsActive=false for all assessments where CourseId == msg.CourseId under tenant filter; idempotent on EventId via inbox. Wire in Api Program.cs. Reference LMS.Contracts AssessmentSubmitted (publish, used by Api in T6) and CourseArchived (consume).",
+      "title": "Infrastructure: Azure Blob storage + QuestPDF renderer",
+      "spec": "Implement IPdfStorage as AzureBlobPdfStorage using BlobServiceClient + container 'certificate-pdfs', key '{tenantId}/{certificateId}.pdf'. Implement ICertificatePdfRenderer as QuestPdfCertificateRenderer: A4 landscape, header (issuer name + tenant logo placeholder), body (learner name + 'has completed' + course title), footer (CertificateNumber, IssuedAt, verification URL + QR via QRCoder). Set QuestPDF.Settings.License = LicenseType.Community in DI extension AddCertificateInfrastructure(IServiceCollection, IConfiguration). Wire MassTransit (UseEntityFrameworkOutbox<CertificateDbContext>, retry intervals 1/5/30s). Smoke unit test: renderer returns byte[] starting with %PDF-.",
       "files": [
-        "src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/Consumers/CourseArchivedConsumer.cs",
-        "src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/Messaging/"
+        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Storage/AzureBlobPdfStorage.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Pdf/QuestPdfCertificateRenderer.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Pdf/QrCodeGenerator.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/DependencyInjection.cs"
       ],
-      "depends_on": ["T1", "T3"],
-      "branch": "feature/assessment-T5-masstransit",
-      "worktree": ".claude-worktrees/T5-assessment-mt",
-      "timeout_minutes": 30,
-      "acceptance": ["dotnet build src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/"]
+      "depends_on": ["T3"],
+      "branch": "feature/cert-T5-pdf-blob",
+      "worktree": ".claude-worktrees/T5-cert-pdf",
+      "timeout_minutes": 60,
+      "acceptance": [
+        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/LMS.CertificateService.Infrastructure.csproj"
+      ]
     },
     {
       "id": "T6",
       "agent": "backend",
-      "title": "Api: Minimal API endpoints + validators + Program.cs",
-      "spec": "Implement all endpoints listed in contracts section 6 under LMS.AssessmentService.Api/Endpoints/ (CRUD assessments, CRUD questions, start session, submit, my-attempts, analytics). Use HttpContext.GetUserId/GetTenantId/GetRoles/IsInRole helpers. Apply role checks (instructor/admin for create+analytics; student for sessions/submit). Strip CorrectOptionIndex+Explanation for student GET. Implement submit flow per contracts section 6 'Submit semantics' (load Redis, grade, persist attempt+answers in single tx, outbox-publish AssessmentSubmitted, delete Redis session). FluentValidation validators including INVALID_QUESTION_INDEX rule. Program.cs: AddServiceDefaults, AddNpgsqlDbContext('lms-assessment'), AddRedisClient('redis'), AddAssessmentInfrastructure, TenantMiddleware, MapDefaultEndpoints, RFC7807 ProblemDetails error mapping, port 5107 in launchSettings.json.",
+      "title": "CourseCompletedConsumer (idempotent issuance + outbox publish)",
+      "spec": "Per contracts.md section 3 publish flow. CourseCompletedConsumer in Infrastructure/Consumers/. Inbox dedupe relies on filtered unique index (TenantId, UserId, CourseId) WHERE revoked_at IS NULL — catch DbUpdateException unique-violation as no-op. Steps: set CurrentTenantId from msg.TenantId, query existing active cert, if none generate Id+CertificateNumber+VerificationCode, render via ICertificatePdfRenderer with placeholder profile (Learner / Course / TenantDisplayName from config), upload via IPdfStorage, insert row, outbox-publish CertificateIssued, SaveChangesAsync. Single transaction. Reads VerificationBaseUrl + DefaultIssuerName from IConfiguration.",
       "files": [
-        "src/services/LMS.AssessmentService/LMS.AssessmentService.Api/"
+        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Consumers/CourseCompletedConsumer.cs"
       ],
-      "depends_on": ["T3", "T5"],
-      "branch": "feature/assessment-T6-api",
-      "worktree": ".claude-worktrees/T6-assessment-api",
-      "timeout_minutes": 60,
-      "acceptance": ["dotnet build src/services/LMS.AssessmentService/LMS.AssessmentService.Api/"]
+      "depends_on": ["T1", "T4", "T5"],
+      "branch": "feature/cert-T6-consumer",
+      "worktree": ".claude-worktrees/T6-cert-consumer",
+      "timeout_minutes": 45,
+      "acceptance": [
+        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/LMS.CertificateService.Infrastructure.csproj"
+      ]
     },
     {
       "id": "T7",
-      "agent": "gateway-ops",
-      "title": "AppHost wiring (assessment-migrator + assessment Api with redis)",
-      "spec": "Edit src/LMS.AppHost/Program.cs to add assessmentDb resource, assessment-migrator (WaitFor assessmentDb), assessment Api (WithReference assessmentDb, rabbitmq, redis; WaitForCompletion(assessmentMigrator)), and gateway.WithReference(assessment). Aspire resource name MUST be 'assessment'. Gateway YARP route already exists in appsettings.json — DO NOT modify. Add LMS.AppHost.csproj <ProjectReference> to the new Api + Migrator csproj.",
+      "agent": "backend",
+      "title": "Api: endpoints + Program.cs + tenant middleware + verify (anonymous)",
+      "spec": "Per contracts.md section 7. Map endpoints in CertificateEndpoints.MapCertificateEndpoints(WebApplication): GET /api/certificates/{id}, GET /api/certificates/me (optional ?courseId), GET /api/certificates/{id}/pdf (FileStreamResult application/pdf via IPdfStorage.OpenReadAsync; 410 if revoked; owner-or-admin authz), POST /api/certificates/{id}/revoke (admin-only via ctx.IsInRole), GET /verify/{verificationCode} (anonymous; uses _db.Certificates.IgnoreQueryFilters().FirstOrDefaultAsync; returns CertificateVerificationDto only — no PII; 410 if revoked). Program.cs: AddServiceDefaults, AddNpgsqlDbContext, AddBlobs, AddMassTransit (consumers from Infrastructure assembly), AddFeatureManagement, AddCertificateInfrastructure, UseMiddleware<TenantMiddleware> only on /api/certificates branch via UseWhen — verify path must NOT require tenant. RFC7807 ProblemDetails for all errors with extensions.code per contracts.md.",
       "files": [
-        "src/LMS.AppHost/Program.cs",
-        "src/LMS.AppHost/LMS.AppHost.csproj"
+        "src/services/LMS.CertificateService/LMS.CertificateService.Api/Endpoints/CertificateEndpoints.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Api/Endpoints/VerifyEndpoints.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Api/Program.cs",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Api/appsettings.json",
+        "src/services/LMS.CertificateService/LMS.CertificateService.Api/appsettings.Development.json"
       ],
-      "depends_on": ["T4", "T6"],
-      "branch": "feature/assessment-T7-apphost",
-      "worktree": ".claude-worktrees/T7-assessment-apphost",
-      "timeout_minutes": 20,
-      "acceptance": ["dotnet build src/LMS.AppHost/LMS.AppHost.csproj"]
+      "depends_on": ["T3", "T4", "T5"],
+      "branch": "feature/cert-T7-api",
+      "worktree": ".claude-worktrees/T7-cert-api",
+      "timeout_minutes": 60,
+      "acceptance": [
+        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Api/LMS.CertificateService.Api.csproj"
+      ]
     },
     {
       "id": "T8",
-      "agent": "tester",
-      "title": "Integration + architecture + contract tests",
-      "spec": "Add tests/LMS.IntegrationTests/AssessmentService/ with Testcontainers Postgres + Redis + RabbitMQ + MassTransit harness covering every bullet in contracts section 9 'Integration'. Extend LMS.ArchitectureTests with TenantEntity inheritance + global filter checks for all four entities and 'Api project must NOT reference JwtBearer'. Extend LMS.ContractTests with the two event-shape tests.",
+      "agent": "gateway-ops",
+      "title": "AppHost wiring for CertificateService + storage blob container",
+      "spec": "Edit src/LMS.AppHost/Program.cs per contracts.md section 8. Replace commented `// var certificateDb` line with `var certificateDb = postgres.AddDatabase(\"lms-certificate\");`. Add `var certificatePdfs = storage.AddBlobs(\"certificate-pdfs\");` near the existing storage definition. Add certificate-migrator + certificate project blocks with WaitForCompletion(certificateMigrator) and WaitFor(certificatePdfs); register `gateway.WithReference(certificate);`. Confirm gateway appsettings.json already has `certificate` and `verify` routes — DO NOT modify. No other changes.",
       "files": [
-        "tests/LMS.IntegrationTests/AssessmentService/",
-        "tests/LMS.ArchitectureTests/",
-        "tests/LMS.ContractTests/"
+        "src/LMS.AppHost/Program.cs"
       ],
-      "depends_on": ["T6", "T7"],
-      "branch": "feature/assessment-T8-tests",
-      "worktree": ".claude-worktrees/T8-assessment-tests",
-      "timeout_minutes": 60,
+      "depends_on": ["T2"],
+      "branch": "feature/cert-T8-apphost",
+      "worktree": ".claude-worktrees/T8-cert-apphost",
+      "timeout_minutes": 20,
       "acceptance": [
-        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~AssessmentService",
-        "dotnet test tests/LMS.ArchitectureTests/",
-        "dotnet test tests/LMS.ContractTests/"
+        "dotnet build src/LMS.AppHost/LMS.AppHost.csproj"
       ]
     },
     {
       "id": "T9",
-      "agent": "security-auditor",
-      "title": "Tenant-isolation + correct-answer-leak audit",
-      "spec": "Audit AssessmentService end-to-end for: (a) every query goes through DbContext (global filter applied), (b) student-facing GETs strip CorrectOptionIndex+Explanation, (c) submit verifies Session.UserId==X-User-Id and Session.TenantId==X-Tenant-Id (leak-safe 404 on mismatch), (d) Redis keys never cross tenants (sid is server-generated GUID — confirm), (e) no JWT validation in Api project, (f) Aspire resource name = 'assessment'. Produce findings; fix any HIGH/CRITICAL.",
+      "agent": "tester",
+      "title": "Integration + architecture + contract tests",
+      "spec": "Per contracts.md section 10. Add tests/LMS.IntegrationTests/CertificateService/ with Testcontainers Postgres + Azurite + RabbitMQ; reuse xunit-integration patterns. Cover: tenant isolation (A vs B 404/empty), CourseCompletedConsumer issues exactly once + idempotent on re-deliver + no-op when active cert exists + new issuance allowed after revoke, GET /pdf streams %PDF- + 410 when revoked, POST /revoke admin-only (instructor=403, double-revoke=409), GET /verify/{code} anonymous returns no PII + 410 on revoked + 404 on unknown. Architecture tests in LMS.ArchitectureTests: Certificate inherits TenantEntity, CertificateDbContext applies global TenantId filter, Api project does not reference Microsoft.AspNetCore.Authentication.JwtBearer, only one method (named VerifyAsync) calls IgnoreQueryFilters. Contract test in LMS.ContractTests: CertificateIssued shape exactly matches spec.",
       "files": [
-        "src/services/LMS.AssessmentService/"
+        "tests/LMS.IntegrationTests/CertificateService/Fixtures/CertificateApiFactory.cs",
+        "tests/LMS.IntegrationTests/CertificateService/CourseCompletedConsumerTests.cs",
+        "tests/LMS.IntegrationTests/CertificateService/CertificateEndpointsTests.cs",
+        "tests/LMS.IntegrationTests/CertificateService/VerifyEndpointTests.cs",
+        "tests/LMS.IntegrationTests/CertificateService/RevokeEndpointTests.cs",
+        "tests/LMS.IntegrationTests/CertificateService/TenantIsolationTests.cs",
+        "tests/LMS.ArchitectureTests/CertificateServiceArchitectureTests.cs",
+        "tests/LMS.ContractTests/CertificateIssuedContractTests.cs"
       ],
       "depends_on": ["T6", "T7", "T8"],
-      "branch": "feature/assessment-T9-audit",
-      "worktree": ".claude-worktrees/T9-assessment-audit",
-      "timeout_minutes": 30,
-      "acceptance": ["dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~AssessmentService"]
+      "branch": "feature/cert-T9-tests",
+      "worktree": ".claude-worktrees/T9-cert-tests",
+      "timeout_minutes": 75,
+      "acceptance": [
+        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~CertificateService",
+        "dotnet test tests/LMS.ArchitectureTests/LMS.ArchitectureTests.csproj",
+        "dotnet test tests/LMS.ContractTests/LMS.ContractTests.csproj --filter FullyQualifiedName~CertificateIssued"
+      ]
     },
     {
       "id": "T10",
-      "agent": "reviewer",
-      "title": "End-to-end review against contracts.md + absolute rules",
-      "spec": "Review T1–T9 output against .claude/contracts.md (every section) and CLAUDE.md absolute rules (TenantEntity, global filter, no direct HTTP, no JWT in services, events in LMS.Contracts only, Assessment.LessonId nullable). Run full solution build + all tests. Produce structured report; block merge on contract violations.",
+      "agent": "security-auditor",
+      "title": "Tenant-isolation + verify-endpoint security audit",
+      "spec": "Run /audit-tenant scoped to src/services/LMS.CertificateService. Specific checks: (a) every Certificate read except VerifyAsync goes through tenant-filtered DbSet (no IgnoreQueryFilters elsewhere); (b) VerifyAsync response contains no UserId, TenantId, PdfStorageKey, RevocationReason; (c) GET /pdf enforces owner-or-admin and not just tenant scope; (d) POST /revoke is admin-only, not instructor; (e) CourseCompletedConsumer sets CurrentTenantId from msg.TenantId before any DB access; (f) blob keys include tenantId so cross-tenant blob enumeration is detectable in logs; (g) no Authorization header or X-User-Id read on /verify route. Produce findings; T11 reviewer must address any HIGH severity items before merge.",
       "files": [],
-      "depends_on": ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9"],
-      "branch": "feature/assessment-T10-review",
-      "worktree": ".claude-worktrees/T10-assessment-review",
+      "depends_on": ["T9"],
+      "branch": "feature/cert-T10-audit",
+      "worktree": ".claude-worktrees/T10-cert-audit",
       "timeout_minutes": 30,
-      "acceptance": ["dotnet build LMS.slnx", "dotnet test"]
+      "acceptance": [
+        "test -f .claude/audits/cert-tenant-audit.md || true"
+      ]
     },
     {
       "id": "T11",
-      "agent": "docs-writer",
-      "title": "Sync docs/assessment.md + ADR-007",
-      "spec": "Move docs/assessment.md to docs/services/assessment.md (matches progress/course convention). Update: port 5106 -> 5107; note GdprErasureRequested deferred Phase 1; add CourseArchived to consumed events; document ShortAnswer pending-review behaviour; document Assessment:DefaultSessionTtlSeconds config; mark grading queue/appeal endpoints Phase 2. Author docs/adr/adr-007-assessment-lessonid-nullable.md if missing (referenced by CLAUDE.md absolute rule).",
-      "files": [
-        "docs/services/assessment.md",
-        "docs/adr/adr-007-assessment-lessonid-nullable.md"
-      ],
+      "agent": "reviewer",
+      "title": "Final review against contracts.md + absolute rules",
+      "spec": "Run /code-reviewer against all CertificateService changes (T1–T10). Mandatory checks: (1) Certificate inherits TenantEntity; (2) global EF filter present; (3) NO direct HTTP between services (no HttpClient targeting another LMS service); (4) JWT validated only at gateway, no AddJwtBearer in Api; (5) CertificateIssued declared in LMS.Contracts (not inline); (6) PDF generated via QuestPDF only (grep iTextSharp, Puppeteer, PdfSharp — must be absent); (7) port 5108 set in launchSettings; (8) Aspire resource name 'certificate' matches gateway cluster; (9) verify endpoint anonymous and PII-free; (10) revoke is admin-only. Address all HIGH-severity findings from T10. Block merge on any contract drift.",
+      "files": [],
       "depends_on": ["T10"],
-      "branch": "feature/assessment-T11-docs",
-      "worktree": ".claude-worktrees/T11-assessment-docs",
-      "timeout_minutes": 20,
-      "acceptance": ["test -f docs/services/assessment.md"]
+      "branch": "feature/cert-T11-review",
+      "worktree": ".claude-worktrees/T11-cert-review",
+      "timeout_minutes": 30,
+      "acceptance": [
+        "dotnet build LMS.slnx",
+        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~CertificateService"
+      ]
     }
   ]
 }

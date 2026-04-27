@@ -31,5 +31,7 @@
     <ProjectReference Include="..\services\LMS.ProgressService\LMS.ProgressService.Migrator\LMS.ProgressService.Migrator.csproj" />
     <ProjectReference Include="..\services\LMS.AssessmentService\LMS.AssessmentService.Api\LMS.AssessmentService.Api.csproj" />
     <ProjectReference Include="..\services\LMS.AssessmentService\LMS.AssessmentService.Migrator\LMS.AssessmentService.Migrator.csproj" />
+    <ProjectReference Include="..\services\LMS.CertificateService\LMS.CertificateService.Api\LMS.CertificateService.Api.csproj" />
+    <ProjectReference Include="..\services\LMS.CertificateService\LMS.CertificateService.Migrator\LMS.CertificateService.Migrator.csproj" />
   </ItemGroup>
 </Project>
