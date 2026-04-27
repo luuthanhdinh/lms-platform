@@ -20,5 +20,7 @@
     <ProjectReference Include="../gateway/LMS.Gateway/LMS.Gateway.csproj" />
     <ProjectReference Include="../services/LMS.IdentityService/LMS.IdentityService.Api/LMS.IdentityService.Api.csproj" />
     <ProjectReference Include="../services/LMS.IdentityService/LMS.IdentityService.Migrator/LMS.IdentityService.Migrator.csproj" />
+    <ProjectReference Include="../services/LMS.CourseService/LMS.CourseService.Api/LMS.CourseService.Api.csproj" />
+    <ProjectReference Include="../services/LMS.CourseService/LMS.CourseService.Migrator/LMS.CourseService.Migrator.csproj" />
   </ItemGroup>
 </Project>

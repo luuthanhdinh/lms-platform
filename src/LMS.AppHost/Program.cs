@@ -10,6 +10,7 @@ var keycloak = builder.AddKeycloak("keycloak")
 
 // Databases — uncomment as each service is scaffolded
 var identityDb    = postgres.AddDatabase("lms-identity");
+var courseDb      = postgres.AddDatabase("lms-courses");
 // var courseDb      = postgres.AddDatabase("lms_courses");
 // var contentDb     = mongo.AddDatabase("lms_content");
 // var enrollmentDb  = postgres.AddDatabase("lms_enrollment");
@@ -35,6 +36,18 @@ var identity = builder.AddProject<Projects.LMS_IdentityService_Api>("identity")
     .WaitForCompletion(identityMigrator);
 
 gateway.WithReference(identity);
+
+// CourseService
+var courseMigrator = builder.AddProject<Projects.LMS_CourseService_Migrator>("course-migrator")
+    .WithReference(courseDb)
+    .WaitFor(courseDb);
+
+var course = builder.AddProject<Projects.LMS_CourseService_Api>("courses")
+    .WithReference(courseDb)
+    .WithReference(rabbitmq)
+    .WaitForCompletion(courseMigrator);
+
+gateway.WithReference(course);
 
 // Services — uncomment as each service project is scaffolded
 

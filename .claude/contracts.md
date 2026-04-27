@@ -1,267 +1,293 @@
 # Contracts (locked — do not deviate)
-_Hash: <sha256 of this file at lock time, filled by orchestrator>_
+_Hash: <to be filled by orchestrator>_
 
-Feature: **LMS.IdentityService** — User profile, tenant configuration, role assignment, and invite flow. Second Phase 1 service.
-
-Phase: **1**  ·  Service: `src/services/LMS.IdentityService/`  ·  Trust boundary: **reads `X-User-Id`/`X-Tenant-Id`/`X-Roles` from gateway only — never validates JWT**.
-
-Port (logical): `identity` (Aspire service discovery; YARP cluster `identity` → `http://identity` already locked in `src/gateway/LMS.Gateway/appsettings.json`).
-DB: `lms_identity` (PostgreSQL).
-ADRs: ADR-001 (Keycloak realm strategy), ADR-002 (MFA enforcement).
+Feature: **LMS.CourseService** (Phase 1, service #3)
+Port: **5102** · Database: `lms_courses` (PostgreSQL) · Schema: `courses`
+ADRs: ADR-005 (snapshot/version pinning), ADR-006 (IsFree gate)
 
 ---
 
-## Trust model (locked)
+## 1. EF Core entities (LMS.CourseService.Domain)
 
-Service trusts only the following headers, set by `LMS.Gateway`:
-
-| Header        | Format       | Required for non-anonymous endpoints |
-|---------------|--------------|--------------------------------------|
-| `X-User-Id`   | UUID         | yes                                  |
-| `X-Tenant-Id` | UUID         | yes                                  |
-| `X-Roles`     | comma list   | yes (e.g. `student`, `org-admin`)    |
-| `X-Correlation-Id` | GUID    | always (forwarded by gateway)        |
-
-- **No JWT validation in this service.** The `Authorization` header is stripped by YARP and must NOT be re-honoured.
-- Missing/malformed `X-User-Id` or `X-Tenant-Id` on protected endpoints → `401 { "code": "UNAUTHENTICATED" }`.
-- Role gate failures → `403 { "code": "FORBIDDEN" }`.
-- All EF queries pass through the global `TenantId` filter; the resolved tenant comes from `X-Tenant-Id` via a scoped `ITenantContext` provider.
-
-## Roles (locked enum values, lowercase wire form)
-
-| Wire value    | UserRole enum    |
-|---------------|------------------|
-| `student`     | `Student`        |
-| `instructor`  | `Instructor`     |
-| `admin`       | `Admin`          |
-| `org-admin`   | `OrgAdmin`       |
-
-Authorization rules:
-- `GET /api/identity/profile/me`, `PUT /api/identity/profile/me`, `POST /api/identity/profile` → any authenticated role.
-- `GET /api/identity/users`, `POST /api/identity/users/invite`, `PATCH /api/identity/users/{id}/role`, `PATCH /api/identity/users/{id}/deactivate`, `PUT /api/identity/tenant` → `org-admin` OR `admin`.
-- `GET /api/identity/tenant` → any authenticated role.
-
----
-
-## HTTP endpoints (locked)
-
-All endpoints prefixed `/api/identity`. All return `application/json`. Errors use `{ "code": "<UPPER_SNAKE>", "message": "...", "details"?: {...} }`. Validation errors use RFC7807 `ValidationProblem`.
-
-### Profile
-
-```
-GET  /api/identity/profile/me                  → 200 UserProfileDto | 404 PROFILE_NOT_FOUND
-PUT  /api/identity/profile/me                  ← UpdateProfileRequest      → 200 UserProfileDto | 400 ValidationProblem | 404 PROFILE_NOT_FOUND
-POST /api/identity/profile                     ← UpsertProfileRequest      → 200 UserProfileDto (existing) | 201 UserProfileDto (created) | 400 ValidationProblem
-```
-
-`POST /api/identity/profile` is **idempotent**. Called by the frontend on first login (gateway never originates calls — see `.claude/contracts.md` for gateway). Matches on `(TenantId, KeycloakId)`. On create, publishes `UserRegistered`. On update, no event.
-
-### User administration (`org-admin` | `admin`)
-
-```
-GET   /api/identity/users                      ?role=&active=&search=&page=&pageSize=
-                                               → 200 PagedResult<UserSummaryDto>
-POST  /api/identity/users/invite               ← InviteUserRequest   → 201 UserInviteDto | 400 ValidationProblem | 409 INVITE_DUPLICATE
-PATCH /api/identity/users/{id}/role            ← { "role": "instructor" }
-                                               → 200 UserProfileDto | 400 ValidationProblem | 404 USER_NOT_FOUND
-PATCH /api/identity/users/{id}/deactivate      → 204 | 404 USER_NOT_FOUND | 409 ALREADY_DEACTIVATED
-```
-
-### Tenant configuration
-
-```
-GET /api/identity/tenant                       → 200 TenantConfigDto | 404 TENANT_NOT_FOUND
-PUT /api/identity/tenant                       ← UpdateTenantRequest → 200 TenantConfigDto | 400 ValidationProblem
-```
-
-### DTO shapes (locked)
+All inherit `TenantEntity` (`Id: Guid`, `TenantId: Guid`, `CreatedAt: DateTimeOffset`, `UpdatedAt: DateTimeOffset`).
+Schema name: `courses`.
 
 ```csharp
-public record UserProfileDto(
-    Guid Id, Guid TenantId, string KeycloakId, string Email, string DisplayName,
-    string? AvatarUrl, string? Bio, string Timezone, string Language,
-    string Role, bool IsActive, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public class Course : TenantEntity
+{
+    public Guid InstructorId { get; set; }
+    public string Title { get; set; } = default!;          // <= 200
+    public string Description { get; set; } = default!;    // <= 4000
+    public Guid? ThumbnailContentId { get; set; }
+    public string Category { get; set; } = default!;       // <= 80
+    public string[] Tags { get; set; } = [];               // text[]
+    public DifficultyLevel Difficulty { get; set; }
+    public string Language { get; set; } = "vi";           // ISO-639-1
+    public CourseStatus Status { get; set; } = CourseStatus.Draft;
+    public bool IsFree { get; set; } = true;               // ADR-006
+    public int Version { get; set; } = 1;                  // ADR-005
+    public int EnrollmentCount { get; set; }
+    public DateTimeOffset? PublishedAt { get; set; }
+    public ICollection<CourseSection> Sections { get; set; } = [];
+    public ICollection<CoursePrerequisite> Prerequisites { get; set; } = [];
+}
 
-public record UserSummaryDto(
-    Guid Id, string Email, string DisplayName, string Role, bool IsActive,
-    DateTimeOffset CreatedAt);
+public class CourseSection : TenantEntity
+{
+    public Guid CourseId { get; set; }
+    public Course Course { get; set; } = default!;
+    public string Title { get; set; } = default!;          // <= 200
+    public int Order { get; set; }
+    public ICollection<CourseLesson> Lessons { get; set; } = [];
+}
 
-public record UpsertProfileRequest(
-    string KeycloakId, string Email, string DisplayName,
-    string? AvatarUrl, string? Timezone, string? Language);
+public class CourseLesson : TenantEntity
+{
+    public Guid SectionId { get; set; }
+    public CourseSection Section { get; set; } = default!;
+    public Guid CourseId { get; set; }                     // denormalised for query speed
+    public string Title { get; set; } = default!;          // <= 200
+    public Guid ContentItemId { get; set; }
+    public int? DurationSeconds { get; set; }              // updated via ContentProcessingCompleted
+    public bool IsFreePreview { get; set; }
+    public bool IsOptional { get; set; }
+    public int Order { get; set; }
+}
 
-public record UpdateProfileRequest(
-    string DisplayName, string? AvatarUrl, string? Bio,
-    string? Timezone, string? Language);
+public class CoursePrerequisite : TenantEntity
+{
+    public Guid CourseId { get; set; }
+    public Guid PrerequisiteCourseId { get; set; }
+}
 
-public record InviteUserRequest(string Email, string Role);
+public class CourseSnapshot : TenantEntity
+{
+    public Guid CourseId { get; set; }
+    public int Version { get; set; }
+    public string StructureJson { get; set; } = default!;  // jsonb
+    public DateTimeOffset SnapshotAt { get; set; } = DateTimeOffset.UtcNow;
+}
 
-public record UserInviteDto(
-    Guid Id, string Email, string Role, string Token,
-    DateTimeOffset ExpiresAt, bool IsAccepted, DateTimeOffset CreatedAt);
-
-public record TenantConfigDto(
-    Guid Id, string Name, string? LogoUrl, string Timezone,
-    string[] AllowedEmailDomains, string Plan,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
-
-public record UpdateTenantRequest(
-    string Name, string? LogoUrl, string? Timezone, string[]? AllowedEmailDomains);
-
-public record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int Total);
+public enum CourseStatus { Draft, Published, Archived }
+public enum DifficultyLevel { Beginner, Intermediate, Advanced }
 ```
 
-Validation:
-- `Email` — RFC5322 + (when tenant has `AllowedEmailDomains`) domain whitelist enforced on `InviteUserRequest`.
-- `DisplayName` — 1–120 chars.
-- `Timezone` — IANA TZ id (`TimeZoneInfo.TryConvertIanaIdToWindowsId`-validated).
-- `Language` — ISO 639-1 (`vi`, `en`, …).
-- `Role` (incoming string) — must map to `UserRole` enum (case-insensitive, kebab → enum).
+### Indexes
+- `Course`: `(TenantId, Status)`, `(TenantId, InstructorId)`, `(TenantId, Category)`, GIN on `Tags`
+- `CourseSection`: unique `(CourseId, Order)`
+- `CourseLesson`: unique `(SectionId, Order)`, index `(CourseId)`, index `(ContentItemId)`
+- `CoursePrerequisite`: unique `(CourseId, PrerequisiteCourseId)`
+- `CourseSnapshot`: unique `(CourseId, Version)`
+
+### Global filter
+`OnModelCreating` applies `e => e.TenantId == CurrentTenantId` to every `TenantEntity` descendant
+(replicate `IdentityDbContext` pattern verbatim).
+
+### Outbox
+`AddEntityFrameworkOutbox<CourseDbContext>` — outbox tables created via the same migration.
+
+### Migration filename
+`20260427_001_InitialCourseSchema.cs` (initial migration covers all entities + outbox).
 
 ---
 
-## EF Core entities (locked)
+## 2. Events — `LMS.Contracts/Course/`
 
-All entities inherit `TenantEntity` (`Id: Guid`, `TenantId: Guid`, `CreatedAt: DateTimeOffset`, `UpdatedAt: DateTimeOffset`). DbContext: `IdentityDbContext` in `LMS.IdentityService.Infrastructure`. Schema: `identity`. Global query filter on `TenantId == _tenantContext.TenantId` for **every** entity.
-
-### `user_profiles`
-
-| Column        | Type                | Notes                                    |
-|---------------|---------------------|------------------------------------------|
-| Id            | uuid (PK)           |                                          |
-| TenantId      | uuid (idx, filter)  |                                          |
-| KeycloakId    | text (NOT NULL)     | unique within tenant: `(TenantId, KeycloakId)` |
-| Email         | citext / text lower | unique within tenant: `(TenantId, Email)`|
-| DisplayName   | text                |                                          |
-| AvatarUrl     | text? nullable      |                                          |
-| Bio           | text? nullable      | max 2000 chars                           |
-| Timezone      | text NOT NULL       | default `Asia/Ho_Chi_Minh`               |
-| Language      | text NOT NULL       | default `vi`                             |
-| Role          | int (UserRole)      | default `Student`                        |
-| IsActive      | bool NOT NULL       | default `true`                           |
-| CreatedAt/UpdatedAt | timestamptz   |                                          |
-
-Indexes:
-- `UX_UserProfile_Tenant_Keycloak` UNIQUE on `(TenantId, KeycloakId)`
-- `UX_UserProfile_Tenant_Email` UNIQUE on `(TenantId, Email)`
-- `IX_UserProfile_Tenant_Role` on `(TenantId, Role)`
-
-### `tenant_configs`
-
-| Column              | Type           | Notes                                       |
-|---------------------|----------------|---------------------------------------------|
-| Id                  | uuid (PK)      | equals TenantId (1:1 with tenant)           |
-| TenantId            | uuid           | == Id (filter still applies)                |
-| Name                | text NOT NULL  |                                             |
-| LogoUrl             | text? nullable |                                             |
-| Timezone            | text NOT NULL  | default `Asia/Ho_Chi_Minh`                  |
-| AllowedEmailDomains | text[]         | default `{}`                                |
-| Plan                | int (TenantPlan) | default `Free`                            |
-| CreatedAt/UpdatedAt | timestamptz    |                                             |
-
-Indexes:
-- `UX_TenantConfig_TenantId` UNIQUE on `(TenantId)`
-
-### `user_invites`
-
-| Column       | Type           | Notes                                       |
-|--------------|----------------|---------------------------------------------|
-| Id           | uuid (PK)      |                                             |
-| TenantId     | uuid (filter)  |                                             |
-| Email        | text NOT NULL  |                                             |
-| Role         | int (UserRole) |                                             |
-| Token        | text NOT NULL  | 32-hex `Guid.NewGuid().ToString("N")`       |
-| ExpiresAt    | timestamptz    | default `now() + 7 days`                    |
-| IsAccepted   | bool NOT NULL  | default `false`                             |
-| CreatedAt/UpdatedAt | timestamptz |                                            |
-
-Indexes:
-- `UX_UserInvite_Token` UNIQUE on `(Token)`
-- `IX_UserInvite_Tenant_Email_Pending` on `(TenantId, Email)` `WHERE IsAccepted = false`
-
-### Migration
-
-- Initial migration filename: `20260427000001_InitialIdentity.cs` in `LMS.IdentityService.Migrator/Migrations/`.
-- Migration is run by the Aspire-hosted `LMS.IdentityService.Migrator` job; AppHost gates `LMS.IdentityService.Api` on `WaitForCompletion(migrator)`.
-
----
-
-## MassTransit events (locked — defined in `LMS.Contracts`)
-
-These records ALREADY exist (by docs/events.md spec) — the events-architect task is to **add** them to `LMS.Contracts` if not yet present, otherwise verify shape match. No re-definition inside the service.
+### Published
 
 ```csharp
-public record UserRegistered(
-    Guid UserId, Guid TenantId, string Email,
-    string DisplayName, DateTimeOffset OccurredAt);
-
-public record UserDeactivated(
-    Guid UserId, Guid TenantId, Guid DeactivatedBy,
+public sealed record CoursePublished(
+    Guid EventId,
+    Guid TenantId,
+    Guid CourseId,
+    Guid InstructorId,
+    int Version,
     DateTimeOffset OccurredAt);
 ```
 
-**Published by IdentityService:**
-- `UserRegistered` — on first successful upsert (insert path of `POST /api/identity/profile`).
-- `UserDeactivated` — on `PATCH /api/identity/users/{id}/deactivate` success.
+NOTE: `docs/events.md` currently shows `CoursePublished` without `EventId`. We **align with the
+absolute rule** "every event has EventId, TenantId, OccurredAt" — `EventId` is added.
+`docs/events.md` is updated in T11.
 
-**Consumed by IdentityService:** none in Phase 1.
+### Consumed (no new contracts authored — these already exist or will when their owners ship)
 
-Publishing rules:
-- Use `IPublishEndpoint`. Event publish happens **inside the same EF transaction** via the MassTransit transactional outbox (added in this service per `masstransit-events` skill).
-- `OccurredAt = DateTimeOffset.UtcNow` at publish time.
-- Idempotency: re-running `POST /api/identity/profile` for an existing `(TenantId, KeycloakId)` MUST NOT republish `UserRegistered`.
+- `LMS.Contracts.Content.ContentProcessingCompleted(Guid ContentItemId, Guid TenantId, string HlsManifestUrl, int DurationSeconds, DateTimeOffset OccurredAt)`
+  → updates `CourseLesson.DurationSeconds` for every lesson with matching `ContentItemId` in tenant.
+- `LMS.Contracts.Identity.UserEnrolled(Guid UserId, Guid CourseId, Guid TenantId, string PlanType, DateTimeOffset OccurredAt)`
+  → atomic increment of `Course.EnrollmentCount`.
 
----
-
-## YARP gateway route (already locked — verification only)
-
-Route id `identity` → `/api/identity/{**rest}` → cluster `identity` → `http://identity`. Already present in `src/gateway/LMS.Gateway/appsettings.json`. **No gateway changes required** for this feature. The `gateway-ops` task ONLY adds the AppHost `WithReference(identity)` wiring.
+Both consumers idempotent. `UserEnrolled` idempotency uses inbox table keyed on
+`(UserId, CourseId)` natural composite since the event lacks `EventId`.
 
 ---
 
-## Aspire AppHost wiring (locked surface)
+## 3. HTTP endpoints (LMS.CourseService.Api)
+
+All routes mounted under `/api/courses` and reachable through gateway YARP route
+(`/api/courses/**` → `courses` cluster, wired in T7).
+
+Headers (forwarded by gateway, never re-validated):
+`X-User-Id`, `X-Tenant-Id`, `X-Roles`.
+
+| Method | Path | Auth | Request | 2xx | Errors |
+|---|---|---|---|---|---|
+| GET | `/api/courses` | public | query: `category?, tag?, difficulty?, page=1, pageSize=20` | 200 `Page<CourseSummary>` | 400 |
+| POST | `/api/courses` | role: `instructor`/`admin` | `CreateCourseRequest` | 201 `CourseDetail` | 400, 401, 403 |
+| GET | `/api/courses/{id}` | public | — | 200 `CourseDetail` | 404 |
+| PUT | `/api/courses/{id}` | owner instructor or admin | `UpdateCourseRequest` | 200 `CourseDetail` | 400, 403, 404, 409 |
+| POST | `/api/courses/{id}/publish` | owner instructor | — | 200 `CourseDetail` | 403, 404, 409 (no published lesson), 409 `PAYMENT_REQUIRED` |
+| POST | `/api/courses/{id}/unpublish` | owner instructor or admin | — | 200 `CourseDetail` | 403, 404 |
+| POST | `/api/courses/{id}/duplicate` | owner instructor or admin | — | 201 `CourseDetail` | 403, 404 |
+| GET | `/api/courses/{id}/syllabus` | public | — | 200 `CourseSyllabus` | 404 |
+| POST | `/api/courses/{id}/sections` | owner instructor | `SectionRequest` | 201 `SectionDto` | 400, 403, 404 |
+| PUT | `/api/courses/{id}/sections/{sid}` | owner instructor | `SectionRequest` | 200 `SectionDto` | 400, 403, 404 |
+| DELETE | `/api/courses/{id}/sections/{sid}` | owner instructor | — | 204 | 403, 404 |
+| POST | `/api/courses/{id}/sections/{sid}/lessons` | owner instructor | `CreateLessonRequest` | 201 `LessonDto` | 400, 403, 404 |
+| PUT | `/api/courses/{id}/sections/{sid}/lessons/{lid}` | owner instructor | `UpdateLessonRequest` | 200 `LessonDto` | 400, 403, 404 |
+| DELETE | `/api/courses/{id}/sections/{sid}/lessons/{lid}` | owner instructor | — | 204 | 403, 404 |
+
+### DTO shapes
+```csharp
+public record CreateCourseRequest(string Title, string Description, string Category,
+    string[] Tags, DifficultyLevel Difficulty, string Language, bool IsFree, Guid? ThumbnailContentId);
+public record UpdateCourseRequest(string Title, string Description, string Category,
+    string[] Tags, DifficultyLevel Difficulty, string Language, bool IsFree, Guid? ThumbnailContentId);
+public record SectionRequest(string Title, int Order);
+public record CreateLessonRequest(string Title, Guid ContentItemId, int Order, bool IsFreePreview, bool IsOptional);
+public record UpdateLessonRequest(string Title, Guid ContentItemId, int Order, bool IsFreePreview, bool IsOptional);
+
+public record CourseSummary(Guid Id, string Title, string Category, string[] Tags,
+    DifficultyLevel Difficulty, string Language, CourseStatus Status, bool IsFree,
+    int Version, int EnrollmentCount, Guid InstructorId, DateTimeOffset? PublishedAt);
+public record CourseDetail(/* CourseSummary fields + */ string Description, Guid? ThumbnailContentId,
+    IReadOnlyList<SectionDto> Sections, IReadOnlyList<Guid> Prerequisites);
+public record SectionDto(Guid Id, string Title, int Order, IReadOnlyList<LessonDto> Lessons);
+public record LessonDto(Guid Id, string Title, Guid ContentItemId, int? DurationSeconds,
+    int Order, bool IsFreePreview, bool IsOptional);
+public record CourseSyllabus(Guid CourseId, int Version, IReadOnlyList<SyllabusSection> Sections);
+public record SyllabusSection(Guid Id, string Title, int Order, IReadOnlyList<SyllabusLesson> Lessons);
+public record SyllabusLesson(Guid Id, string Title, int Order, int? DurationSeconds, bool IsFreePreview);
+public record Page<T>(IReadOnlyList<T> Items, int Page, int PageSize, int Total);
+```
+
+### Error shape
+RFC7807 `ProblemDetails`. For payment gate:
+```
+HTTP/1.1 409 Conflict
+Content-Type: application/problem+json
+{ "type": "https://lms/errors/payment-required",
+  "title": "Payment required",
+  "status": 409,
+  "code": "PAYMENT_REQUIRED",
+  "courseId": "<guid>" }
+```
+
+---
+
+## 4. Payment gate rule (ADR-006)
+
+- `POST /api/courses/{id}/publish`: if `Course.IsFree == false` → return **409 PAYMENT_REQUIRED**
+  (stub until Phase 2 BillingService exists). The course remains in `Draft`. No event published.
+- All other writes ignore `IsFree` for now.
+
+---
+
+## 5. Publish flow (ADR-005, locked)
+
+1. Load `Course` with sections+lessons, validate ownership and `Status == Draft`.
+2. Reject with `409 NoPublishedLesson` if course has 0 lessons.
+3. If `!IsFree` → `409 PAYMENT_REQUIRED` (no state change).
+4. Begin transaction:
+   - `Course.Version += 1`
+   - Serialize (`Sections + Lessons` projection) → `StructureJson`
+   - Insert `CourseSnapshot { CourseId, Version=Course.Version, StructureJson, SnapshotAt=now }`
+   - `Course.Status = Published`, `Course.PublishedAt = now`
+   - Outbox-publish `CoursePublished(EventId, TenantId, CourseId, InstructorId, Version, OccurredAt)`
+5. Commit. MassTransit EF outbox delivers reliably to RabbitMQ.
+
+---
+
+## 6. Domain abstractions to copy (do NOT import from IdentityService)
+
+- `ITenantContext` + `HeaderTenantContext` — replicate from
+  `src/services/LMS.IdentityService/LMS.IdentityService.Domain/Abstractions/ITenantContext.cs`
+- `AuthorizationHelpers` — replicate (reads `X-Roles` from `HttpContext.Items`/middleware).
+- `CourseDbContext` — mirrors `IdentityDbContext` global-filter + `SaveChangesAsync` pattern.
+
+Repositories (interfaces in Domain, EF impls in Infrastructure):
+- `ICourseRepository`, `ISectionRepository`, `ILessonRepository`, `ICourseSnapshotRepository`.
+All read methods accept `tenantId` explicitly as a defence-in-depth predicate.
+
+---
+
+## 7. Aspire AppHost wiring (locked diff)
 
 In `src/LMS.AppHost/Program.cs`:
 
+```csharp
+var courseDb = postgres.AddDatabase("lms-courses");
+
+var courseMigrator = builder.AddProject<Projects.LMS_CourseService_Migrator>("course-migrator")
+    .WithReference(courseDb)
+    .WaitFor(courseDb);
+
+var course = builder.AddProject<Projects.LMS_CourseService_Api>("courses")
+    .WithReference(courseDb)
+    .WithReference(rabbitmq)
+    .WaitForCompletion(courseMigrator);
+
+gateway.WithReference(course);
 ```
-var identityDb = postgres.AddDatabase("lms_identity");
-var identityMigrator = builder.AddProject<Projects.LMS_IdentityService_Migrator>("identity-migrator")
-    .WithReference(identityDb).WaitFor(identityDb);
-var identity = builder.AddProject<Projects.LMS_IdentityService_Api>("identity")
-    .WithReference(identityDb).WithReference(rabbit).WithReference(redis)
-    .WaitForCompletion(identityMigrator);
-gateway.WithReference(identity);
+
+YARP route for `/api/courses/**` → `courses` cluster. (Gateway transforms inject
+`X-User-Id` / `X-Tenant-Id` / `X-Roles`.)
+
+---
+
+## 8. Project layout (locked)
+
+```
+src/services/LMS.CourseService/
+  LMS.CourseService.Domain/          # entities, enums, ITenantContext, repo interfaces, DTO records
+  LMS.CourseService.Infrastructure/  # CourseDbContext, EF configs, repo impls, MassTransit outbox + consumers
+  LMS.CourseService.Api/             # Minimal API endpoints, validators, Program.cs, HeaderTenantContext, AuthorizationHelpers
+  LMS.CourseService.Migrator/        # IHostedService that runs migrations on start
 ```
 
-(Resource names `identity-migrator` and `identity` are locked because YARP cluster destination is `http://identity`.)
+---
+
+## 9. Tests (locked surface)
+
+- Unit: publish flow rules, payment gate, snapshot serialization, validators.
+- Integration (`LMS.IntegrationTests`):
+  - Tenant isolation: cannot read/write across tenants.
+  - Payment gate: publish IsFree=false → 409 PAYMENT_REQUIRED.
+  - Publish happy path emits `CoursePublished` (MassTransit test harness).
+  - Consumer: `ContentProcessingCompleted` updates lesson duration.
+  - Consumer: `UserEnrolled` increments EnrollmentCount idempotently.
+- Architecture: every entity inherits `TenantEntity`; DbContext has global filter.
+- Contract: `CoursePublished` shape stable.
 
 ---
 
-## Feature flags
+## 10. Decisions (locked — approved by product owner 2026-04-27)
 
-**None introduced.** All endpoints in this service are Phase 1 / always-on.
+1. **`CourseArchived` event** — `POST /{id}/unpublish` publishes `CourseArchived` via outbox.
+   Record (add to `LMS.Contracts/Course/CourseArchived.cs`):
+   ```csharp
+   public sealed record CourseArchived(
+       Guid EventId, Guid TenantId, Guid CourseId,
+       Guid InstructorId, DateTimeOffset OccurredAt);
+   ```
+   EnrollmentService will consume this in Phase 1 to suspend active enrollments.
 
----
+2. **Public endpoint tenant scope** — Phase 1: read `X-Tenant-Id` header only (gateway
+   always forwards it, even for unauthenticated requests). Slug-based resolution is Phase 2.
+   If `X-Tenant-Id` is missing/invalid on public GETs → `400 TENANT_REQUIRED`.
 
-## Frontend impact
-
-Out of scope for this feature plan (frontend hooks for profile/me will be planned with the React frontend feature). DTO shapes above are the contract the frontend will bind to.
-
----
-
-## Cross-service flows
-
-- `UserRegistered` → consumed by `NotificationWorker` (welcome email) per `docs/events.md`.
-- `UserDeactivated` → consumed by `EnrollmentService` (suspend active enrollments) per `docs/events.md`.
-- Neither consumer is implemented in this feature; only the publish side and contract shape are locked here.
-
----
-
-## Decisions (locked — approved by product owner 2026-04-27)
-
-1. **Tenant bootstrap** — On application startup (Migrator run), if no `TenantConfig` row exists, seed a **master tenant** with a fixed well-known `TenantId` (config key `Seeding:MasterTenantId`, default `00000000-0000-0000-0000-000000000001`). This master tenant is the default org. Subsequent tenant rows are created via an admin operation (out of scope Phase 1). First user upsert into a tenant that lacks a `TenantConfig` still returns `409 TENANT_NOT_PROVISIONED` (master tenant is pre-seeded so day-1 logins always succeed).
-
-2. **Invite acceptance** — No dedicated `/accept` endpoint in Phase 1. `POST /api/identity/profile` upsert automatically marks the most-recent pending `UserInvite` for `(TenantId, Email)` as `IsAccepted = true` if found. Documented behaviour, not a bug.
-
-3. **Service layout** — 4-project layout at `src/services/LMS.IdentityService/` confirmed.
+3. **Owner check** — "owner-or-admin" pattern:
+   - `Course.InstructorId == ctx.UserId` → allowed (any matching instructor)
+   - role is `admin` or `org-admin` → allowed (bypass ownership)
+   - Otherwise → `403 FORBIDDEN`
+   Apply this to: `PUT /{id}`, `POST /{id}/publish`, `POST /{id}/unpublish`,
+   `POST /{id}/duplicate`, all section and lesson write endpoints.

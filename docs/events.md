@@ -64,8 +64,12 @@ public record EnrollmentSuspended(
 
 // ── Content & Learning ────────────────────────────────────────────────
 public record CoursePublished(
-    Guid CourseId, Guid TenantId, Guid InstructorId,
-    int Version, DateTimeOffset OccurredAt);
+    Guid EventId, Guid TenantId, Guid CourseId,
+    Guid InstructorId, int Version, DateTimeOffset OccurredAt);
+
+public record CourseArchived(
+    Guid EventId, Guid TenantId, Guid CourseId,
+    Guid InstructorId, DateTimeOffset OccurredAt);
 
 public record LessonCompleted(
     Guid UserId, Guid LessonId, Guid CourseId,
@@ -245,7 +249,9 @@ public record LabSessionTerminated(
 |---|---|---|
 | `UserRegistered` | IdentityService | NotificationWorker |
 | `UserDeactivated` | IdentityService | EnrollmentService (suspend enrollments), NotificationWorker |
-| `UserEnrolled` | EnrollmentService | NotificationWorker |
+| `CoursePublished` | CourseService | EnrollmentService (open enrolment), NotificationWorker |
+| `CourseArchived` | CourseService | EnrollmentService (suspend active enrollments), NotificationWorker |
+| `UserEnrolled` | EnrollmentService | ProgressService (seed record), CourseService (increment count), NotificationWorker |
 | `LessonCompleted` | ProgressService | GamificationService*, NotificationWorker |
 | `CourseCompleted` | ProgressService | CertificateService, GamificationService* |
 | `ContentProcessingCompleted` | ContentService | CourseService (update duration) |

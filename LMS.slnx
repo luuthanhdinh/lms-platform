@@ -9,6 +9,12 @@
     <Project Path="src/gateway/LMS.Gateway/LMS.Gateway.csproj" />
   </Folder>
   <Folder Name="/src/services/" />
+  <Folder Name="/src/services/LMS.CourseService/">
+    <Project Path="src/services/LMS.CourseService/LMS.CourseService.Api/LMS.CourseService.Api.csproj" />
+    <Project Path="src/services/LMS.CourseService/LMS.CourseService.Domain/LMS.CourseService.Domain.csproj" />
+    <Project Path="src/services/LMS.CourseService/LMS.CourseService.Infrastructure/LMS.CourseService.Infrastructure.csproj" />
+    <Project Path="src/services/LMS.CourseService/LMS.CourseService.Migrator/LMS.CourseService.Migrator.csproj" />
+  </Folder>
   <Folder Name="/src/services/LMS.IdentityService/">
     <Project Path="src/services/LMS.IdentityService/LMS.IdentityService.Api/LMS.IdentityService.Api.csproj" />
     <Project Path="src/services/LMS.IdentityService/LMS.IdentityService.Domain/LMS.IdentityService.Domain.csproj" />
