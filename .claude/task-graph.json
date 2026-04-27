@@ -1,203 +1,177 @@
 {
-  "feature": "LMS.ProgressService (Phase 1 #6) — lesson + course completion tracking with MassTransit outbox",
+  "feature": "LMS.AssessmentService (Phase 1, service #7) — quiz/exam engine with Redis-backed sessions, MCQ/TrueFalse auto-grading, and AssessmentSubmitted publish",
   "phase": 1,
-  "complexity": "M",
+  "complexity": "L",
   "tasks": [
     {
       "id": "T1",
       "agent": "events-architect",
-      "title": "Add LessonCompleted + CourseCompleted records to LMS.Contracts",
-      "spec": "Create src/LMS.Contracts/Progress/LessonCompleted.cs and src/LMS.Contracts/Progress/CourseCompleted.cs as sealed records matching the shapes locked in contracts.md section 3 (no EventId; idempotency on natural keys). Namespace: LMS.Contracts.Progress. No consumers wired in this task — pure contract.",
+      "title": "Add AssessmentSubmitted + EssaySubmitted contracts",
+      "spec": "Create src/LMS.Contracts/Assessment/AssessmentSubmitted.cs and EssaySubmitted.cs matching the exact shapes locked in .claude/contracts.md section 3. AssessmentSubmitted: (Guid UserId, Guid AssessmentId, Guid CourseId, Guid TenantId, float Score, bool Passed, DateTimeOffset OccurredAt). EssaySubmitted: (Guid UserId, Guid SubmissionId, Guid AssessmentId, Guid TenantId, DateTimeOffset OccurredAt). Records, no body. Verify project compiles.",
       "files": [
-        "src/LMS.Contracts/Progress/LessonCompleted.cs",
-        "src/LMS.Contracts/Progress/CourseCompleted.cs"
+        "src/LMS.Contracts/Assessment/AssessmentSubmitted.cs",
+        "src/LMS.Contracts/Assessment/EssaySubmitted.cs"
       ],
       "depends_on": [],
-      "branch": "feature/progress-T1-events",
-      "worktree": ".claude-worktrees/T1-progress-events",
+      "branch": "feature/assessment-T1-events",
+      "worktree": ".claude-worktrees/T1-assessment-events",
       "timeout_minutes": 15,
       "acceptance": ["dotnet build src/LMS.Contracts/LMS.Contracts.csproj"]
     },
     {
       "id": "T2",
       "agent": "backend",
-      "title": "Scaffold ProgressService 4-project layout",
-      "spec": "Use /scaffold-service style: create src/services/LMS.ProgressService/{Domain,Infrastructure,Api,Migrator} csproj files with the references locked in contracts.md section 1. Add to LMS.slnx. NuGet packages per contracts. Empty Program.cs in Api + Migrator (compiles). Do NOT add entities or DbContext yet (T3/T4 do that).",
+      "title": "Scaffold 4-project AssessmentService skeleton + Domain entities/DTOs/enums",
+      "spec": "Create src/services/LMS.AssessmentService/{Domain,Infrastructure,Api,Migrator}/*.csproj per the standard layout in .claude/contracts.md section 1. Add all entity classes (Assessment, Question, AssessmentAttempt, AttemptAnswer, AssessmentSession), enums (QuestionType, GradingStatus), QuestionOption record, and all DTO records (CreateAssessmentRequest, CreateQuestionRequest, UpdateQuestionRequest, SubmitAnswersRequest, SubmittedAnswer, QuestionDto, AssessmentDto, SessionStartedDto, AssessmentResultDto, GradedAnswerDto, AttemptSummaryDto, AssessmentAnalyticsDto, QuestionStatDto) into LMS.AssessmentService.Domain. All TenantEntity descendants. Add solution-level references. NO endpoints / DbContext yet.",
       "files": [
-        "src/services/LMS.ProgressService/LMS.ProgressService.Domain/LMS.ProgressService.Domain.csproj",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/LMS.ProgressService.Infrastructure.csproj",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Api/LMS.ProgressService.Api.csproj",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Migrator/LMS.ProgressService.Migrator.csproj",
+        "src/services/LMS.AssessmentService/LMS.AssessmentService.Domain/",
+        "src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/LMS.AssessmentService.Infrastructure.csproj",
+        "src/services/LMS.AssessmentService/LMS.AssessmentService.Api/LMS.AssessmentService.Api.csproj",
+        "src/services/LMS.AssessmentService/LMS.AssessmentService.Migrator/LMS.AssessmentService.Migrator.csproj",
         "LMS.slnx"
       ],
       "depends_on": [],
-      "branch": "feature/progress-T2-scaffold",
-      "worktree": ".claude-worktrees/T2-progress-scaffold",
-      "timeout_minutes": 20,
-      "acceptance": ["dotnet build LMS.slnx"]
+      "branch": "feature/assessment-T2-scaffold",
+      "worktree": ".claude-worktrees/T2-assessment-scaffold",
+      "timeout_minutes": 30,
+      "acceptance": ["dotnet build src/services/LMS.AssessmentService/LMS.AssessmentService.Domain/LMS.AssessmentService.Domain.csproj"]
     },
     {
       "id": "T3",
       "agent": "backend",
-      "title": "Domain layer — entities, enums, DTOs, ITenantContext",
-      "spec": "In LMS.ProgressService.Domain: add Entities/LessonProgress.cs, Entities/CourseProgress.cs, Enums/ProgressStatus.cs (per contracts.md section 2 and docs/entities.md). Add Dtos/ for CompleteLessonRequest, LessonProgressDto, CourseProgressDto, CourseProgressSummaryDto, LessonAnalyticsDto. Add Tenancy/ITenantContext.cs interface (TenantId getter) — match EnrollmentService pattern.",
+      "title": "Infrastructure: AssessmentDbContext + EF config + Redis session store + grading service",
+      "spec": "Create AssessmentDbContext (schema 'assessments') in LMS.AssessmentService.Infrastructure/Data/. Apply global TenantId query filter via reflection over TenantEntity descendants. Configure jsonb conversion for Question.Options, xmin row version on all four entities, cascade deletes (Assessment->Question, AssessmentAttempt->AttemptAnswer), all indexes per contracts section 2. Implement IAssessmentSessionStore using StackExchange.Redis with key 'assessment:session:{sid}', JSON serialisation, TTL = TimeLimitSeconds+60 or DefaultSessionTtlSeconds. Implement IGradingService (pure function: grades MCQ/TrueFalse comparing SelectedOptionIndex to CorrectOptionIndex; ShortAnswer/Essay -> IsCorrect=null, points=0, GradingStatus=PendingReview). Add ITenantContext + DI extension AddAssessmentInfrastructure. Reference LMS.Contracts.",
       "files": [
-        "src/services/LMS.ProgressService/LMS.ProgressService.Domain/Entities/LessonProgress.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Domain/Entities/CourseProgress.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Domain/Enums/ProgressStatus.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Domain/Dtos/ProgressDtos.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Domain/Tenancy/ITenantContext.cs"
+        "src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/"
       ],
       "depends_on": ["T2"],
-      "branch": "feature/progress-T3-domain",
-      "worktree": ".claude-worktrees/T3-progress-domain",
-      "timeout_minutes": 20,
-      "acceptance": ["dotnet build src/services/LMS.ProgressService/LMS.ProgressService.Domain/LMS.ProgressService.Domain.csproj"]
+      "branch": "feature/assessment-T3-infra",
+      "worktree": ".claude-worktrees/T3-assessment-infra",
+      "timeout_minutes": 45,
+      "acceptance": ["dotnet build src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/"]
     },
     {
       "id": "T4",
-      "agent": "backend",
-      "title": "Infrastructure — ProgressDbContext, EF config, MassTransit consumers",
-      "spec": "Implement ProgressDbContext (schema=progress, two DbSets, global TenantId filter via reflection over TenantEntity descendants, indexes per contracts section 2, xmin row version). Add UserEnrolledConsumer + EnrollmentCancelledConsumer in Consumers/. Add MassTransit DI extension with AddEntityFrameworkOutbox<ProgressDbContext>, retry Intervals(1s,5s,30s). Implement HttpContextTenantContext.cs reading X-Tenant-Id. Reference LMS.Contracts.Enrollment.UserEnrolled and EnrollmentCancelled. Behaviour per contracts section 3.",
+      "agent": "db-migrator",
+      "title": "Initial migration + Migrator host",
+      "spec": "Generate EF migration 20260427_001_InitialAssessmentSchema in LMS.AssessmentService.Infrastructure/Migrations creating schema 'assessments', tables (assessments, questions, assessment_attempts, attempt_answers) with all indexes from contracts section 2, plus MassTransit outbox/inbox/state tables in same schema. Implement Migrator Program.cs as IHostedService that calls Database.MigrateAsync once and exits 0 (Aspire WaitForCompletion pattern, mirrors ProgressService.Migrator).",
       "files": [
-        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Data/ProgressDbContext.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Data/ProgressDbContextFactory.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Consumers/UserEnrolledConsumer.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Consumers/EnrollmentCancelledConsumer.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Tenancy/HttpContextTenantContext.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/DependencyInjection.cs"
+        "src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/Migrations/",
+        "src/services/LMS.AssessmentService/LMS.AssessmentService.Migrator/"
       ],
-      "depends_on": ["T1", "T3"],
-      "branch": "feature/progress-T4-infra",
-      "worktree": ".claude-worktrees/T4-progress-infra",
-      "timeout_minutes": 45,
-      "acceptance": ["dotnet build src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/LMS.ProgressService.Infrastructure.csproj"]
+      "depends_on": ["T3"],
+      "branch": "feature/assessment-T4-migration",
+      "worktree": ".claude-worktrees/T4-assessment-migration",
+      "timeout_minutes": 30,
+      "acceptance": [
+        "dotnet build src/services/LMS.AssessmentService/LMS.AssessmentService.Migrator/",
+        "dotnet ef migrations list --project src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure"
+      ]
     },
     {
       "id": "T5",
-      "agent": "db-migrator",
-      "title": "Initial EF Core migration + Migrator host",
-      "spec": "Generate migration 20260427_001_InitialProgressSchema covering: schema progress, tables lesson_progress + course_progress with all columns/indexes per contracts section 2, plus MassTransit outbox/inbox/state tables in same schema. Implement Migrator/Program.cs as IHostedService that runs db.Database.MigrateAsync() once and exits 0. Match EnrollmentService.Migrator pattern.",
+      "agent": "backend",
+      "title": "MassTransit wiring + CourseArchived consumer (deactivate assessments)",
+      "spec": "In Infrastructure: register MassTransit with EF outbox over AssessmentDbContext, kebab-case endpoint formatter, RabbitMQ host, retry Intervals(1s,5s,30s). Implement CourseArchivedConsumer: sets Assessment.IsActive=false for all assessments where CourseId == msg.CourseId under tenant filter; idempotent on EventId via inbox. Wire in Api Program.cs. Reference LMS.Contracts AssessmentSubmitted (publish, used by Api in T6) and CourseArchived (consume).",
       "files": [
-        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Migrations/20260427_001_InitialProgressSchema.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Migrations/20260427_001_InitialProgressSchema.Designer.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Migrations/ProgressDbContextModelSnapshot.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Migrator/Program.cs"
+        "src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/Consumers/CourseArchivedConsumer.cs",
+        "src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/Messaging/"
       ],
-      "depends_on": ["T4"],
-      "branch": "feature/progress-T5-migration",
-      "worktree": ".claude-worktrees/T5-progress-migration",
+      "depends_on": ["T1", "T3"],
+      "branch": "feature/assessment-T5-masstransit",
+      "worktree": ".claude-worktrees/T5-assessment-mt",
       "timeout_minutes": 30,
-      "acceptance": [
-        "dotnet build src/services/LMS.ProgressService/LMS.ProgressService.Migrator/LMS.ProgressService.Migrator.csproj",
-        "dotnet ef migrations list --project src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure --startup-project src/services/LMS.ProgressService/LMS.ProgressService.Migrator"
-      ]
+      "acceptance": ["dotnet build src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/"]
     },
     {
       "id": "T6",
       "agent": "backend",
-      "title": "Api — Minimal API endpoints, validators, Program.cs, gateway route",
-      "spec": "Implement Program.cs (Minimal API) with all endpoints from contracts.md section 5. Header tenancy middleware (X-Tenant-Id required, 400 TENANT_REQUIRED). FluentValidation validator for CompleteLessonRequest (CourseId non-empty; WatchPercent in [0,100] else INVALID_WATCH_PERCENT). Endpoint handlers implement the recompute semantics in section 5 (atomic upsert + outbox publish of LessonCompleted, conditional CourseCompleted on transition to 100%). Authorization via X-Roles header (instructor/admin for analytics; student for self routes). Wire gateway: append progress route + cluster to src/gateway/LMS.Gateway/appsettings.json. Update src/services/LMS.ProgressService/LMS.ProgressService.Api/Properties/launchSettings.json with port 5106.",
+      "title": "Api: Minimal API endpoints + validators + Program.cs",
+      "spec": "Implement all endpoints listed in contracts section 6 under LMS.AssessmentService.Api/Endpoints/ (CRUD assessments, CRUD questions, start session, submit, my-attempts, analytics). Use HttpContext.GetUserId/GetTenantId/GetRoles/IsInRole helpers. Apply role checks (instructor/admin for create+analytics; student for sessions/submit). Strip CorrectOptionIndex+Explanation for student GET. Implement submit flow per contracts section 6 'Submit semantics' (load Redis, grade, persist attempt+answers in single tx, outbox-publish AssessmentSubmitted, delete Redis session). FluentValidation validators including INVALID_QUESTION_INDEX rule. Program.cs: AddServiceDefaults, AddNpgsqlDbContext('lms-assessment'), AddRedisClient('redis'), AddAssessmentInfrastructure, TenantMiddleware, MapDefaultEndpoints, RFC7807 ProblemDetails error mapping, port 5107 in launchSettings.json.",
       "files": [
-        "src/services/LMS.ProgressService/LMS.ProgressService.Api/Program.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Api/Endpoints/ProgressEndpoints.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Api/Validators/CompleteLessonRequestValidator.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Api/Authorization/RoleChecks.cs",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Api/Properties/launchSettings.json",
-        "src/services/LMS.ProgressService/LMS.ProgressService.Api/appsettings.json",
-        "src/gateway/LMS.Gateway/appsettings.json"
+        "src/services/LMS.AssessmentService/LMS.AssessmentService.Api/"
       ],
-      "depends_on": ["T4"],
-      "branch": "feature/progress-T6-api",
-      "worktree": ".claude-worktrees/T6-progress-api",
+      "depends_on": ["T3", "T5"],
+      "branch": "feature/assessment-T6-api",
+      "worktree": ".claude-worktrees/T6-assessment-api",
       "timeout_minutes": 60,
-      "acceptance": ["dotnet build src/services/LMS.ProgressService/LMS.ProgressService.Api/LMS.ProgressService.Api.csproj"]
+      "acceptance": ["dotnet build src/services/LMS.AssessmentService/LMS.AssessmentService.Api/"]
     },
     {
       "id": "T7",
       "agent": "gateway-ops",
-      "title": "AppHost wiring — register progress + progress-migrator resources",
-      "spec": "Apply the locked diff in contracts.md section 6 to src/LMS.AppHost/Program.cs: AddDatabase('lms-progress'), AddProject<Projects.LMS_ProgressService_Migrator>('progress-migrator') with WaitFor(progressDb), AddProject<Projects.LMS_ProgressService_Api>('progress') with WithReference(progressDb)+WithReference(rabbitmq)+WaitForCompletion(progressMigrator), gateway.WithReference(progress). Remove the stale `// builder.AddProject<Projects.LMS_ProgressService>` comment.",
+      "title": "AppHost wiring (assessment-migrator + assessment Api with redis)",
+      "spec": "Edit src/LMS.AppHost/Program.cs to add assessmentDb resource, assessment-migrator (WaitFor assessmentDb), assessment Api (WithReference assessmentDb, rabbitmq, redis; WaitForCompletion(assessmentMigrator)), and gateway.WithReference(assessment). Aspire resource name MUST be 'assessment'. Gateway YARP route already exists in appsettings.json — DO NOT modify. Add LMS.AppHost.csproj <ProjectReference> to the new Api + Migrator csproj.",
       "files": [
         "src/LMS.AppHost/Program.cs",
         "src/LMS.AppHost/LMS.AppHost.csproj"
       ],
-      "depends_on": ["T2", "T5", "T6"],
-      "branch": "feature/progress-T7-apphost",
-      "worktree": ".claude-worktrees/T7-progress-apphost",
-      "timeout_minutes": 15,
+      "depends_on": ["T4", "T6"],
+      "branch": "feature/assessment-T7-apphost",
+      "worktree": ".claude-worktrees/T7-assessment-apphost",
+      "timeout_minutes": 20,
       "acceptance": ["dotnet build src/LMS.AppHost/LMS.AppHost.csproj"]
     },
     {
       "id": "T8",
       "agent": "tester",
-      "title": "Integration + unit + architecture + contract tests",
-      "spec": "Add tests under tests/LMS.IntegrationTests/ProgressService/ using xunit-integration skill (Testcontainers Postgres + RabbitMQ + MassTransit harness + Keycloak header stub). Cover every scenario in contracts.md section 8 (tenant pair, complete-lesson happy path + idempotency, CourseCompleted-once on transition, UserEnrolled consumer upsert, EnrollmentCancelled consumer touches LastAccessedAt only, analytics 403). Add unit tests for validator + recompute helper + DTO mapping. Add architecture assertions in LMS.ArchitectureTests for TenantEntity inheritance + global filter. Add contract tests in LMS.ContractTests asserting LessonCompleted/CourseCompleted record shapes.",
+      "title": "Integration + architecture + contract tests",
+      "spec": "Add tests/LMS.IntegrationTests/AssessmentService/ with Testcontainers Postgres + Redis + RabbitMQ + MassTransit harness covering every bullet in contracts section 9 'Integration'. Extend LMS.ArchitectureTests with TenantEntity inheritance + global filter checks for all four entities and 'Api project must NOT reference JwtBearer'. Extend LMS.ContractTests with the two event-shape tests.",
       "files": [
-        "tests/LMS.IntegrationTests/ProgressService/Fixtures/ProgressFactory.cs",
-        "tests/LMS.IntegrationTests/ProgressService/CompleteLessonTests.cs",
-        "tests/LMS.IntegrationTests/ProgressService/TenantIsolationTests.cs",
-        "tests/LMS.IntegrationTests/ProgressService/Consumers/UserEnrolledConsumerTests.cs",
-        "tests/LMS.IntegrationTests/ProgressService/Consumers/EnrollmentCancelledConsumerTests.cs",
-        "tests/LMS.IntegrationTests/ProgressService/Unit/CompleteLessonRequestValidatorTests.cs",
-        "tests/LMS.IntegrationTests/ProgressService/Unit/RecomputeTests.cs",
-        "tests/LMS.ArchitectureTests/ProgressServiceArchitectureTests.cs",
-        "tests/LMS.ContractTests/ProgressEventsContractTests.cs"
+        "tests/LMS.IntegrationTests/AssessmentService/",
+        "tests/LMS.ArchitectureTests/",
+        "tests/LMS.ContractTests/"
       ],
       "depends_on": ["T6", "T7"],
-      "branch": "feature/progress-T8-tests",
-      "worktree": ".claude-worktrees/T8-progress-tests",
-      "timeout_minutes": 75,
+      "branch": "feature/assessment-T8-tests",
+      "worktree": ".claude-worktrees/T8-assessment-tests",
+      "timeout_minutes": 60,
       "acceptance": [
-        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~ProgressService",
-        "dotnet test tests/LMS.ArchitectureTests/LMS.ArchitectureTests.csproj --filter FullyQualifiedName~ProgressService",
-        "dotnet test tests/LMS.ContractTests/LMS.ContractTests.csproj --filter FullyQualifiedName~Progress"
+        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~AssessmentService",
+        "dotnet test tests/LMS.ArchitectureTests/",
+        "dotnet test tests/LMS.ContractTests/"
       ]
     },
     {
       "id": "T9",
       "agent": "security-auditor",
-      "title": "Tenant-isolation + JWT-trust audit on ProgressService",
-      "spec": "Run tenant-isolation skill against ProgressService surface. Verify: every entity inherits TenantEntity, global query filter applied for both DbSets, no endpoint re-validates JWT, X-User-Id used only as identity (never trusted for tenant), consumers stamp TenantId from event payload (not HttpContext), analytics endpoint cannot leak cross-tenant rows. Produce a structured finding list — empty list = pass.",
+      "title": "Tenant-isolation + correct-answer-leak audit",
+      "spec": "Audit AssessmentService end-to-end for: (a) every query goes through DbContext (global filter applied), (b) student-facing GETs strip CorrectOptionIndex+Explanation, (c) submit verifies Session.UserId==X-User-Id and Session.TenantId==X-Tenant-Id (leak-safe 404 on mismatch), (d) Redis keys never cross tenants (sid is server-generated GUID — confirm), (e) no JWT validation in Api project, (f) Aspire resource name = 'assessment'. Produce findings; fix any HIGH/CRITICAL.",
       "files": [
-        "src/services/LMS.ProgressService",
-        "tests/LMS.IntegrationTests/ProgressService"
+        "src/services/LMS.AssessmentService/"
       ],
       "depends_on": ["T6", "T7", "T8"],
-      "branch": "feature/progress-T9-audit",
-      "worktree": ".claude-worktrees/T9-progress-audit",
-      "timeout_minutes": 25,
-      "acceptance": ["audit report has zero high/critical findings"]
+      "branch": "feature/assessment-T9-audit",
+      "worktree": ".claude-worktrees/T9-assessment-audit",
+      "timeout_minutes": 30,
+      "acceptance": ["dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~AssessmentService"]
     },
     {
       "id": "T10",
       "agent": "reviewer",
       "title": "End-to-end review against contracts.md + absolute rules",
-      "spec": "Run code-reviewer skill across all branches T1–T9. Check: contracts.md section-by-section compliance, absolute rules (TenantEntity, global filter, no direct HTTP between services, JWT only at gateway, events as records in LMS.Contracts), DAG of services in AppHost, idempotency keys on consumers, outbox usage on every Publish, error-shape consistency. Block on any contract violation.",
+      "spec": "Review T1–T9 output against .claude/contracts.md (every section) and CLAUDE.md absolute rules (TenantEntity, global filter, no direct HTTP, no JWT in services, events in LMS.Contracts only, Assessment.LessonId nullable). Run full solution build + all tests. Produce structured report; block merge on contract violations.",
       "files": [],
       "depends_on": ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9"],
-      "branch": "feature/progress-T10-review",
-      "worktree": ".claude-worktrees/T10-progress-review",
+      "branch": "feature/assessment-T10-review",
+      "worktree": ".claude-worktrees/T10-assessment-review",
       "timeout_minutes": 30,
-      "acceptance": ["reviewer report = approved"]
+      "acceptance": ["dotnet build LMS.slnx", "dotnet test"]
     },
     {
       "id": "T11",
       "agent": "docs-writer",
-      "title": "Update docs to reflect shipped ProgressService",
-      "spec": "Create docs/services/progress.md (NEW under services/ — copy from existing docs/progress.md, fix port to 5106, drop deferred features to a 'Phase 2+' section, document the 7 open decisions from contracts.md section 9). Update docs/architecture.md service map to include progress at port 5106. Update docs/events.md routing table — confirm LessonCompleted/CourseCompleted publishers + consumers match what shipped. Append an entry to docs/adr-index.md only if a new ADR is warranted (likely not — open decisions extend ADR-004).",
+      "title": "Sync docs/assessment.md + ADR-007",
+      "spec": "Move docs/assessment.md to docs/services/assessment.md (matches progress/course convention). Update: port 5106 -> 5107; note GdprErasureRequested deferred Phase 1; add CourseArchived to consumed events; document ShortAnswer pending-review behaviour; document Assessment:DefaultSessionTtlSeconds config; mark grading queue/appeal endpoints Phase 2. Author docs/adr/adr-007-assessment-lessonid-nullable.md if missing (referenced by CLAUDE.md absolute rule).",
       "files": [
-        "docs/services/progress.md",
-        "docs/progress.md",
-        "docs/architecture.md",
-        "docs/events.md",
-        "docs/adr-index.md"
+        "docs/services/assessment.md",
+        "docs/adr/adr-007-assessment-lessonid-nullable.md"
       ],
       "depends_on": ["T10"],
-      "branch": "feature/progress-T11-docs",
-      "worktree": ".claude-worktrees/T11-progress-docs",
-      "timeout_minutes": 25,
-      "acceptance": ["markdown lints clean", "links resolve"]
+      "branch": "feature/assessment-T11-docs",
+      "worktree": ".claude-worktrees/T11-assessment-docs",
+      "timeout_minutes": 20,
+      "acceptance": ["test -f docs/services/assessment.md"]
     }
   ]
 }
