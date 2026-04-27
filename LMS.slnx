@@ -27,6 +27,12 @@
     <Project Path="src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/LMS.EnrollmentService.Infrastructure.csproj" />
     <Project Path="src/services/LMS.EnrollmentService/LMS.EnrollmentService.Migrator/LMS.EnrollmentService.Migrator.csproj" />
   </Folder>
+  <Folder Name="/src/services/LMS.ProgressService/">
+    <Project Path="src/services/LMS.ProgressService/LMS.ProgressService.Api/LMS.ProgressService.Api.csproj" />
+    <Project Path="src/services/LMS.ProgressService/LMS.ProgressService.Domain/LMS.ProgressService.Domain.csproj" />
+    <Project Path="src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/LMS.ProgressService.Infrastructure.csproj" />
+    <Project Path="src/services/LMS.ProgressService/LMS.ProgressService.Migrator/LMS.ProgressService.Migrator.csproj" />
+  </Folder>
   <Folder Name="/src/services/LMS.IdentityService/">
     <Project Path="src/services/LMS.IdentityService/LMS.IdentityService.Api/LMS.IdentityService.Api.csproj" />
     <Project Path="src/services/LMS.IdentityService/LMS.IdentityService.Domain/LMS.IdentityService.Domain.csproj" />
