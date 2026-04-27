@@ -1,168 +1,159 @@
 {
-  "feature": "LMS.ContentService — MongoDB-backed content service with Azure Blob Storage (Azurite in dev), async processing worker, multipart upload + SAS playback URLs, MassTransit publish/consume",
+  "feature": "LMS.EnrollmentService — Postgres-backed enrolment service with IsFree gate, duplicate-enrol gate, UserEnrolled + EnrollmentCancelled publishers, CourseArchived consumer (suspend active enrolments)",
   "phase": 1,
-  "complexity": "L",
+  "complexity": "M",
   "tasks": [
     {
       "id": "T1",
       "agent": "events-architect",
-      "title": "Add ContentUploaded + ContentProcessingFailed records to LMS.Contracts",
-      "spec": "Add src/LMS.Contracts/Content/ContentUploaded.cs and src/LMS.Contracts/Content/ContentProcessingFailed.cs as sealed records exactly per .claude/contracts.md section 3. Add src/LMS.Contracts/Content/ContentType.cs enum (Video, Pdf, Image, Other) with identical ordinal values to the Domain enum. Do NOT modify the existing ContentProcessingCompleted.cs. Mirror XML-doc style of existing Content/ContentProcessingCompleted.cs. Defer docs/events.md updates to T11.",
+      "title": "Add EnrollmentCancelled record to LMS.Contracts; verify UserEnrolled unchanged",
+      "spec": "CREATE the new file src/LMS.Contracts/Enrollment/EnrollmentCancelled.cs containing exactly:\n\n    public sealed record EnrollmentCancelled(\n        Guid EventId, Guid TenantId, Guid EnrollmentId,\n        Guid UserId, Guid CourseId, DateTimeOffset OccurredAt);\n\nNamespace: LMS.Contracts.Enrollment. Mirror XML-doc style of existing UserEnrolled.cs (summary describes publisher = EnrollmentService, consumers = ProgressService freeze, CourseService decrement, NotificationWorker email). Then VERIFY src/LMS.Contracts/Enrollment/UserEnrolled.cs still has NO EventId field — do NOT modify it (consumers dedupe on natural key (UserId, CourseId)). Do NOT define event records anywhere outside LMS.Contracts.",
       "files": [
-        "src/LMS.Contracts/Content/ContentUploaded.cs",
-        "src/LMS.Contracts/Content/ContentProcessingFailed.cs",
-        "src/LMS.Contracts/Content/ContentType.cs"
+        "src/LMS.Contracts/Enrollment/EnrollmentCancelled.cs"
       ],
       "depends_on": [],
-      "branch": "feature/contentservice-T1-events",
-      "worktree": ".claude-worktrees/T1-contentservice-events",
+      "branch": "feature/enrollmentservice-T1-events",
+      "worktree": ".claude-worktrees/T1-enrollmentservice-events",
       "timeout_minutes": 15,
       "acceptance": ["dotnet build src/LMS.Contracts/LMS.Contracts.csproj"]
     },
     {
       "id": "T2",
       "agent": "backend",
-      "title": "Scaffold 4-project layout for LMS.ContentService",
-      "spec": "Create the four projects under src/services/LMS.ContentService/ (Domain, Infrastructure, Api, Worker) mirroring LMS.CourseService project metadata exactly (TFM net9.0, ImplicitUsings, Nullable). Worker replaces Migrator. Project references per contracts.md section 1. Add all four projects to LMS.slnx. Empty class-library shells for Domain/Infrastructure; Program.cs stubs in Api+Worker. Api launchSettings.json port 5103. ServiceDefaults reference on Api+Worker.",
+      "title": "Scaffold 4-project layout for LMS.EnrollmentService",
+      "spec": "Create the four projects under src/services/LMS.EnrollmentService/ (Domain, Infrastructure, Api, Migrator) mirroring LMS.CourseService project metadata exactly (TFM net9.0, ImplicitUsings, Nullable). Project references per contracts.md section 1. Add all four projects to LMS.slnx. Empty class-library shells for Domain/Infrastructure; Program.cs stubs in Api+Migrator. Api launchSettings.json port 5104. ServiceDefaults reference on Api+Migrator. Use the scaffold-service skill conventions.",
       "files": [
-        "src/services/LMS.ContentService/LMS.ContentService.Domain/LMS.ContentService.Domain.csproj",
-        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/LMS.ContentService.Infrastructure.csproj",
-        "src/services/LMS.ContentService/LMS.ContentService.Api/LMS.ContentService.Api.csproj",
-        "src/services/LMS.ContentService/LMS.ContentService.Api/Program.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Api/Properties/launchSettings.json",
-        "src/services/LMS.ContentService/LMS.ContentService.Worker/LMS.ContentService.Worker.csproj",
-        "src/services/LMS.ContentService/LMS.ContentService.Worker/Program.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/LMS.EnrollmentService.Domain.csproj",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/LMS.EnrollmentService.Infrastructure.csproj",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/LMS.EnrollmentService.Api.csproj",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Program.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Properties/launchSettings.json",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Migrator/LMS.EnrollmentService.Migrator.csproj",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Migrator/Program.cs",
         "LMS.slnx"
       ],
       "depends_on": [],
-      "branch": "feature/contentservice-T2-scaffold",
-      "worktree": ".claude-worktrees/T2-contentservice-scaffold",
+      "branch": "feature/enrollmentservice-T2-scaffold",
+      "worktree": ".claude-worktrees/T2-enrollmentservice-scaffold",
       "timeout_minutes": 25,
       "acceptance": ["dotnet build LMS.slnx"]
     },
     {
       "id": "T3",
       "agent": "backend",
-      "title": "Domain layer: documents, enums, repository + storage + processor interfaces, DTOs",
-      "spec": "Implement ITenantDocument, ContentDocument base, ContentItem document, ContentType + ContentStatus enums per contracts.md section 2. Define IContentItemRepository (every method takes Guid tenantId), IContentStorageService per contracts.md section 5 (UploadAsync streaming bytes, GetDownloadUriAsync returning SAS Uri, DeleteAsync, OpenReadAsync), IVideoProcessor with ProcessAsync returning ProcessingResult record. Add response DTO records (ContentItemDto, PlaybackUrlDto, Page<T>) per contracts.md section 6. Define ITenantContext interface mirroring CourseService.Domain pattern.",
+      "title": "Domain layer: Enrollment entity, EnrollmentStatus enum, ITenantContext, repository interface, DTOs",
+      "spec": "Implement Enrollment : TenantEntity per contracts.md section 2 (UserId, CourseId, Status, IsFree, EnrolledAt, CompletedAt?, CancelledAt?, SuspendedAt?, SuspensionReason?). Implement EnrollmentStatus enum (Active=0, Completed=1, Suspended=2, Cancelled=3). Define ITenantContext interface mirroring CourseService.Domain pattern. Define IEnrollmentRepository (tenant-scoped queries; relies on global filter). Add response DTO records (EnrollmentDto, EnrollRequest, EnrollmentCountDto, Page<T>) per contracts.md section 5.",
       "files": [
-        "src/services/LMS.ContentService/LMS.ContentService.Domain/Documents/ITenantDocument.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Domain/Documents/ContentDocument.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Domain/Documents/ContentItem.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Domain/Enums/ContentType.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Domain/Enums/ContentStatus.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Domain/Abstractions/ITenantContext.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Domain/Storage/IContentStorageService.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Domain/Processing/IVideoProcessor.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Domain/Repositories/IContentItemRepository.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Domain/Dtos/ContentDtos.cs"
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/Entities/Enrollment.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/Enums/EnrollmentStatus.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/Abstractions/ITenantContext.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/Repositories/IEnrollmentRepository.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/Dtos/EnrollmentDtos.cs"
       ],
       "depends_on": ["T2"],
-      "branch": "feature/contentservice-T3-domain",
-      "worktree": ".claude-worktrees/T3-contentservice-domain",
-      "timeout_minutes": 45,
-      "acceptance": ["dotnet build src/services/LMS.ContentService/LMS.ContentService.Domain/LMS.ContentService.Domain.csproj"]
+      "branch": "feature/enrollmentservice-T3-domain",
+      "worktree": ".claude-worktrees/T3-enrollmentservice-domain",
+      "timeout_minutes": 30,
+      "acceptance": ["dotnet build src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/LMS.EnrollmentService.Domain.csproj"]
     },
     {
       "id": "T4",
       "agent": "backend",
-      "title": "Infrastructure: Mongo context, repos, Azure Blob storage, processor stub, MassTransit outbox + DI",
-      "spec": "Implement ContentMongoContext (IMongoDatabase wrapper) reading ConnectionStrings:lms-content. Implement MongoContentItemRepository with explicit tenantId predicate on every operation per contracts.md section 2. Implement IndexInitializer hosted service to create indexes on startup. Implement AzureBlobContentStorageService using Azure.Storage.Blobs SDK: inject BlobServiceClient via Aspire.Azure.Storage.Blobs (AddAzureBlobClient(\"content-blobs\")); use container 'lms-content' (configurable via AzureBlob:Container); ensure-create container on startup; UploadAsync streams to BlobClient.UploadAsync; GetDownloadUriAsync uses BlobClient.GenerateSasUri(BlobSasPermissions.Read, expiresOn). StorageKeyBuilder enforces {tenantId}/{contentItemId}/... prefix and rejects cross-tenant paths (UnauthorizedAccessException). Implement StubVideoProcessor (Phase 1) producing fake HLS/thumb keys + duration. Wire MassTransit MongoDB outbox (AddMongoDbOutbox) — fall back to in-memory outbox if MassTransit.MongoDb unavailable. Provide AddContentInfrastructure(IConfiguration) DI extension consumed by both Api and Worker. Required NuGet packages: Aspire.Azure.Storage.Blobs (~9.4.1-preview.1.25408.4), Azure.Storage.Blobs, MongoDB.Driver, MassTransit.MongoDb.",
+      "title": "Infrastructure: EnrollmentDbContext, EF config, repository, CourseArchived consumer, MassTransit outbox + DI",
+      "spec": "Implement EnrollmentDbContext (DbSet<Enrollment>, schema 'enrollments') with global query filter on TenantId via injected ITenantContext (matches CourseService pattern). Configure entity per contracts.md section 2: table 'enrollments', partial unique index on (TenantId, UserId, CourseId) WHERE Status=Active, plus (TenantId, UserId, Status) and (TenantId, CourseId, Status) indexes; concurrency token via xmin (.IsRowVersion()). Implement EnrollmentRepository. Implement CourseArchivedConsumer (Infrastructure/Consumers): loads active enrolments for (TenantId, CourseId), sets Status=Suspended, SuspendedAt=now, SuspensionReason='course-archived'; idempotent via MassTransit inbox on EventId. Wire MassTransit with AddEntityFrameworkOutbox<EnrollmentDbContext> + RabbitMQ + UseMessageRetry intervals 1s,5s,30s. Provide AddEnrollmentInfrastructure(IConfiguration) DI extension consumed by Api and Migrator. NuGet: Microsoft.EntityFrameworkCore, Npgsql.EntityFrameworkCore.PostgreSQL, MassTransit, MassTransit.RabbitMQ, MassTransit.EntityFrameworkCore.",
       "files": [
-        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Data/ContentMongoContext.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Data/IndexInitializer.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Repositories/MongoContentItemRepository.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Storage/AzureBlobContentStorageService.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Storage/AzureBlobOptions.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Storage/StorageKeyBuilder.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Processing/StubVideoProcessor.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/DependencyInjection.cs"
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/Data/EnrollmentDbContext.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/Data/EnrollmentEntityConfiguration.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/Repositories/EnrollmentRepository.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/Consumers/CourseArchivedConsumer.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/DependencyInjection.cs"
       ],
       "depends_on": ["T1", "T3"],
-      "branch": "feature/contentservice-T4-infra",
-      "worktree": ".claude-worktrees/T4-contentservice-infra",
-      "timeout_minutes": 75,
-      "acceptance": ["dotnet build src/services/LMS.ContentService/LMS.ContentService.Infrastructure/LMS.ContentService.Infrastructure.csproj"]
+      "branch": "feature/enrollmentservice-T4-infra",
+      "worktree": ".claude-worktrees/T4-enrollmentservice-infra",
+      "timeout_minutes": 60,
+      "acceptance": ["dotnet build src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/LMS.EnrollmentService.Infrastructure.csproj"]
     },
     {
       "id": "T5",
-      "agent": "backend",
-      "title": "Api layer: multipart upload endpoint, ContentUploaded publish, query endpoints, Program.cs",
-      "spec": "Implement all endpoints per contracts.md section 6 with Minimal API endpoint groups: POST /uploads (accepts multipart/form-data; streams file part to IContentStorageService.UploadAsync; persists ContentItem with Status=Uploaded; publishes ContentUploaded via outbox; returns 201 ContentItemDto), GET /{id}, GET /{id}/playback (calls GetDownloadUriAsync for HLS manifest with 60 min TTL; returns 409 if Status != Ready), GET / (list with paging), DELETE /{id} (soft delete). HeaderTenantContext + TenantHeaderMiddleware reads X-User-Id, X-Tenant-Id, X-Roles. FluentValidation enforces mime/size limits. Configure Kestrel MaxRequestBodySize and FormOptions.MultipartBodyLengthLimit to Content:MaxVideoSizeBytes. Wire ServiceDefaults, AddContentInfrastructure, ProblemDetails, FeatureManagement, OpenTelemetry. Listen on port 5103.",
+      "agent": "db-migrator",
+      "title": "Initial EF Core migration: schema 'enrollments' + table + indexes + outbox/inbox tables",
+      "spec": "Generate EF Core migration named '20260427_001_InitialEnrollmentSchema' creating: schema 'enrollments'; table 'enrollments' with columns per contracts.md section 2; partial unique index on (TenantId, UserId, CourseId) WHERE Status=0 (Active); standard indexes (TenantId, UserId, Status) and (TenantId, CourseId, Status); MassTransit outbox/inbox tables (OutboxMessage, OutboxState, InboxState) in same schema. Wire Migrator Program.cs as IHostedService that calls Database.MigrateAsync() and exits 0 (matches CourseService.Migrator pattern). Use dotnet-ef-migrations skill. Migration is additive only — no data backfill needed.",
       "files": [
-        "src/services/LMS.ContentService/LMS.ContentService.Api/Program.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Api/Endpoints/",
-        "src/services/LMS.ContentService/LMS.ContentService.Api/Validators/",
-        "src/services/LMS.ContentService/LMS.ContentService.Api/Tenancy/HeaderTenantContext.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Api/Tenancy/TenantHeaderMiddleware.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Api/Authorization/AuthorizationHelpers.cs"
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/Migrations/",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Migrator/Program.cs"
       ],
       "depends_on": ["T4"],
-      "branch": "feature/contentservice-T5-api",
-      "worktree": ".claude-worktrees/T5-contentservice-api",
-      "timeout_minutes": 75,
-      "acceptance": ["dotnet build src/services/LMS.ContentService/LMS.ContentService.Api/LMS.ContentService.Api.csproj"]
+      "branch": "feature/enrollmentservice-T5-migration",
+      "worktree": ".claude-worktrees/T5-enrollmentservice-migration",
+      "timeout_minutes": 30,
+      "acceptance": [
+        "dotnet build src/services/LMS.EnrollmentService/LMS.EnrollmentService.Migrator/LMS.EnrollmentService.Migrator.csproj",
+        "dotnet ef migrations script --project src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure --startup-project src/services/LMS.EnrollmentService/LMS.EnrollmentService.Migrator"
+      ]
     },
     {
       "id": "T6",
       "agent": "backend",
-      "title": "Worker: ContentUploaded consumer, processing flow, publishes ContentProcessingCompleted/Failed",
-      "spec": "Implement Worker Program.cs as a generic host running MassTransit. Add ContentUploadedConsumer per contracts.md section 7: idempotent (skip if Status != Uploaded), flips Status Uploaded->Processing->Ready, calls IVideoProcessor (stub), generates SAS download URI for HLS manifest with 60 min TTL via IContentStorageService.GetDownloadUriAsync, publishes ContentProcessingCompleted via outbox. On exception publishes ContentProcessingFailed and sets Status=Failed. UseMessageRetry intervals 1s,5s,30s. Reuse AddContentInfrastructure.",
+      "title": "Api layer: enrol/list/get/cancel/course-list/count endpoints, IsFree + duplicate gates, UserEnrolled + EnrollmentCancelled publishers",
+      "spec": "Implement all endpoints per contracts.md section 5 with Minimal API endpoint groups under /api/enrollments. POST /api/enrollments: requires X-Roles to contain 'student' OR 'admin' OR 'org-admin' (any other role → 403; admin/org-admin = enrol-on-behalf bypass; UserId always sourced from X-User-Id header, never from request body); validates EnrollRequest (FluentValidation), enforces IsFree gate (409 PAYMENT_REQUIRED with extensions.code), enforces duplicate gate (409 ALREADY_ENROLLED) by checking active row for (TenantId, UserId, CourseId), inserts Enrollment with Status=Active and EnrolledAt=now, publishes UserEnrolled via outbox in same SaveChanges, returns 201 EnrollmentDto. GET /api/enrollments (paged; non-admin scoped to UserId from header). GET /{id} (404 cross-tenant). DELETE /{id} (owner-or-admin, 409 NOT_ACTIVE if not Active, sets Status=Cancelled + CancelledAt=now, publishes EnrollmentCancelled with new EventId). GET /courses/{courseId} (instructor/admin). GET /courses/{courseId}/count. HeaderTenantContext + TenantHeaderMiddleware reads X-User-Id, X-Tenant-Id, X-Roles (no JWT validation). ProblemDetails with extensions.code for PAYMENT_REQUIRED, ALREADY_ENROLLED, NOT_ACTIVE, TENANT_REQUIRED. Wire ServiceDefaults, AddEnrollmentInfrastructure, FeatureManagement, OpenTelemetry. Listen on port 5104.",
       "files": [
-        "src/services/LMS.ContentService/LMS.ContentService.Worker/Program.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Worker/Consumers/ContentUploadedConsumer.cs",
-        "src/services/LMS.ContentService/LMS.ContentService.Worker/Consumers/ContentUploadedConsumerDefinition.cs"
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Program.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Endpoints/",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Validators/",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Tenancy/HeaderTenantContext.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Tenancy/TenantHeaderMiddleware.cs",
+        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Authorization/AuthorizationHelpers.cs"
       ],
       "depends_on": ["T4"],
-      "branch": "feature/contentservice-T6-worker",
-      "worktree": ".claude-worktrees/T6-contentservice-worker",
-      "timeout_minutes": 45,
-      "acceptance": ["dotnet build src/services/LMS.ContentService/LMS.ContentService.Worker/LMS.ContentService.Worker.csproj"]
+      "branch": "feature/enrollmentservice-T6-api",
+      "worktree": ".claude-worktrees/T6-enrollmentservice-api",
+      "timeout_minutes": 75,
+      "acceptance": ["dotnet build src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/LMS.EnrollmentService.Api.csproj"]
     },
     {
       "id": "T7",
       "agent": "gateway-ops",
-      "title": "Aspire AppHost: register MongoDB lms-content, Azure Storage (Azurite emulator) + content-blobs, content Api, content Worker",
-      "spec": "Apply AppHost diff in contracts.md section 8: ensure contentDb is registered as 'lms-content'. Add Azure Storage resource via builder.AddAzureStorage(\"storage\").RunAsEmulator() (uses Azurite in dev). Add storage.AddBlobs(\"content-blobs\"). Register content Api with port 5103, .WithReference(contentDb).WithReference(rabbitmq).WithReference(contentBlobs).WaitFor(contentDb).WaitFor(contentBlobs).WaitFor(rabbitmq). Register content-worker with same references. gateway.WithReference(content). Add NuGet package Aspire.Hosting.Azure to LMS.AppHost.csproj. Verify gateway appsettings.json already routes /api/content/{**rest} to 'content' cluster — confirm in spec output. If gateway has a tight MaxRequestBodySize, raise it to accommodate large multipart uploads (≤ 5 GiB).",
+      "title": "Aspire AppHost: register lms-enrollments DB, enrollment-migrator, enrollment Api; verify gateway YARP route",
+      "spec": "Apply AppHost diff in contracts.md section 6 in src/LMS.AppHost/Program.cs: uncomment + add 'var enrollmentDb = postgres.AddDatabase(\"lms-enrollments\");'; add enrollment-migrator project (.WithReference(enrollmentDb).WaitFor(enrollmentDb)); add enrollment Api project named 'enrollment' (.WithReference(enrollmentDb).WithReference(rabbitmq).WaitForCompletion(enrollmentMigrator)); add 'gateway.WithReference(enrollment);'. Resource name MUST be 'enrollment' to match YARP cluster destination http://enrollment. Confirm in spec output that gateway appsettings.json already routes /api/enrollments/{**rest} → 'enrollment' cluster (no gateway change required).",
       "files": [
-        "src/LMS.AppHost/Program.cs",
-        "src/LMS.AppHost/LMS.AppHost.csproj"
+        "src/LMS.AppHost/Program.cs"
       ],
       "depends_on": ["T5", "T6"],
-      "branch": "feature/contentservice-T7-apphost",
-      "worktree": ".claude-worktrees/T7-contentservice-apphost",
-      "timeout_minutes": 25,
+      "branch": "feature/enrollmentservice-T7-apphost",
+      "worktree": ".claude-worktrees/T7-enrollmentservice-apphost",
+      "timeout_minutes": 20,
       "acceptance": ["dotnet build src/LMS.AppHost/LMS.AppHost.csproj"]
     },
     {
       "id": "T8",
       "agent": "tester",
-      "title": "Integration + unit + architecture + contract tests",
-      "spec": "Per contracts.md section 10. Use xunit-integration skill: WebApplicationFactory + Testcontainers (Mongo + Azurite via mcr.microsoft.com/azure-storage/azurite + RabbitMQ) + MassTransit test harness. Tenant isolation pair on /api/content/{id}. Multipart upload to POST /api/content/uploads persists blob under {tenantId}/{contentItemId}/original/{filename} and returns 201. Upload publishes ContentUploaded. Worker consumer test (consume ContentUploaded -> publishes ContentProcessingCompleted). Playback 409 when not Ready, 200 with SAS Uri when Ready. Soft delete -> 404. Architecture: every Domain document implements ITenantDocument; every IContentItemRepository method has Guid tenantId param. Contract tests for ContentUploaded, ContentProcessingCompleted, ContentProcessingFailed shapes.",
+      "title": "Integration + unit + architecture + contract tests for EnrollmentService",
+      "spec": "Per contracts.md section 8. Use xunit-integration skill: WebApplicationFactory + Testcontainers (Postgres + RabbitMQ) + MassTransit test harness. Tenant isolation pair on /api/enrollments/{id}. POST IsFree=true returns 201 + publishes UserEnrolled. POST IsFree=false → 409 PAYMENT_REQUIRED. Duplicate active enrol → 409 ALREADY_ENROLLED. Re-enrol after cancel succeeds. DELETE by owner → 204, status Cancelled, publishes EnrollmentCancelled. GET / scopes to caller for non-admin. Course-scoped count returns active+total. CourseArchivedConsumer suspends active enrolments and is idempotent on EventId (consume same message twice). Architecture: Enrollment inherits TenantEntity; EnrollmentDbContext applies global filter on TenantId. Contract: UserEnrolled has no EventId; EnrollmentCancelled shape stable.",
       "files": [
-        "tests/LMS.IntegrationTests/ContentService/",
-        "tests/LMS.ContractTests/Content/",
-        "tests/LMS.ArchitectureTests/ContentServiceArchitectureTests.cs"
+        "tests/LMS.IntegrationTests/EnrollmentService/",
+        "tests/LMS.ContractTests/Enrollment/",
+        "tests/LMS.ArchitectureTests/EnrollmentServiceArchitectureTests.cs"
       ],
       "depends_on": ["T6", "T7"],
-      "branch": "feature/contentservice-T8-tests",
-      "worktree": ".claude-worktrees/T8-contentservice-tests",
+      "branch": "feature/enrollmentservice-T8-tests",
+      "worktree": ".claude-worktrees/T8-enrollmentservice-tests",
       "timeout_minutes": 90,
       "acceptance": [
-        "dotnet test tests/LMS.IntegrationTests --filter FullyQualifiedName~ContentService",
-        "dotnet test tests/LMS.ContractTests --filter FullyQualifiedName~Content",
-        "dotnet test tests/LMS.ArchitectureTests --filter FullyQualifiedName~ContentService"
+        "dotnet test tests/LMS.IntegrationTests --filter FullyQualifiedName~EnrollmentService",
+        "dotnet test tests/LMS.ContractTests --filter FullyQualifiedName~Enrollment",
+        "dotnet test tests/LMS.ArchitectureTests --filter FullyQualifiedName~EnrollmentService"
       ]
     },
     {
       "id": "T9",
       "agent": "security-auditor",
-      "title": "Tenant isolation + auth + storage-key audit",
-      "spec": "Run tenant-isolation skill against ContentService (Mongo variant — no global filter; verify every repo call has explicit tenantId predicate). Verify (a) no endpoint trusts a body-supplied TenantId; (b) SAS URIs never expose cross-tenant blob paths; (c) StorageKeyBuilder rejects paths outside the caller's tenant prefix; (d) consumers honour message TenantId; (e) no JWT validation downstream — only X-* headers; (f) Azure Blob container created with private access (no anonymous read); (g) SAS TTL bounded (≤ 60 min) and Read-only permissions; (h) multipart upload size limits enforced before bytes hit Blob Storage.",
-      "files": ["src/services/LMS.ContentService/"],
+      "title": "Tenant isolation + auth + IsFree-gate audit",
+      "spec": "Run tenant-isolation skill against EnrollmentService: (a) global EF query filter on TenantId is applied and not bypassed (.IgnoreQueryFilters() check); (b) no endpoint trusts a body-supplied TenantId — always sourced from X-Tenant-Id header; (c) cross-tenant lookups return 404 not 403 (leak-safe); (d) IsFree gate returns 409 PAYMENT_REQUIRED before any DB write; (e) duplicate-enrol gate cannot be raced (relies on partial unique index, not just app-level check); (f) authorization helpers correctly enforce owner-or-admin and instructor-or-admin; (g) CourseArchivedConsumer honours message TenantId and is idempotent on EventId; (h) no JWT validation downstream — only X-* headers; (i) no direct HTTP to CourseService — IsFree comes from request body only.",
+      "files": ["src/services/LMS.EnrollmentService/"],
       "depends_on": ["T8"],
-      "branch": "feature/contentservice-T9-secaudit",
-      "worktree": ".claude-worktrees/T9-contentservice-secaudit",
+      "branch": "feature/enrollmentservice-T9-secaudit",
+      "worktree": ".claude-worktrees/T9-enrollmentservice-secaudit",
       "timeout_minutes": 30,
       "acceptance": ["audit report with zero high-severity findings"]
     },
@@ -170,33 +161,33 @@
       "id": "T10",
       "agent": "reviewer",
       "title": "Code review against contracts + LMS absolute rules",
-      "spec": "Use code-reviewer skill. Cross-check every document field, event shape, endpoint path, DTO, and AppHost wiring against .claude/contracts.md. Verify Mongo-equivalent tenant safety pattern. Verify 4-project layout. Verify no direct HTTP between services. Verify ILlmClient not bypassed (n/a here). Verify event records in LMS.Contracts only. Verify Azure Blob client is injected via Aspire.Azure.Storage.Blobs (not constructed manually with raw connection strings).",
+      "spec": "Use code-reviewer skill. Cross-check every entity field, event shape, endpoint path, DTO, and AppHost wiring against .claude/contracts.md. Verify Enrollment inherits TenantEntity. Verify EF global query filter on TenantId. Verify event records live only in LMS.Contracts. Verify no direct HTTP between services. Verify UserEnrolled retains its no-EventId shape and EnrollmentCancelled carries EventId. Verify outbox is wired (AddEntityFrameworkOutbox<EnrollmentDbContext>). Verify Aspire resource name is 'enrollment' (matches YARP cluster destination). Verify port 5104 in launchSettings.json.",
       "files": [
-        "src/services/LMS.ContentService/",
-        "src/LMS.Contracts/Content/",
+        "src/services/LMS.EnrollmentService/",
+        "src/LMS.Contracts/Enrollment/",
         "src/LMS.AppHost/Program.cs"
       ],
       "depends_on": ["T8", "T9"],
-      "branch": "feature/contentservice-T10-review",
-      "worktree": ".claude-worktrees/T10-contentservice-review",
+      "branch": "feature/enrollmentservice-T10-review",
+      "worktree": ".claude-worktrees/T10-enrollmentservice-review",
       "timeout_minutes": 30,
       "acceptance": ["review report with all violations resolved or explicitly waived"]
     },
     {
       "id": "T11",
       "agent": "docs-writer",
-      "title": "Author docs/services/content.md, sync entities.md + events.md + architecture.md + README",
-      "spec": "Create docs/services/content.md with shipped endpoints, Azure Blob conventions ({tenantId}/{contentItemId}/... paths, Azurite in dev), Worker flow, consumed/published events. Update docs/entities.md ContentService section to match locked ContentDocument/ContentItem shape (Id Guid surrogate, StorageContainer + StorageKey replacing S3Key, ContentStatus values). Update docs/events.md to add EventId to ContentProcessingCompleted, add ContentUploaded and ContentProcessingFailed records. Note ContentService is now wired into AppHost on port 5103 with Azure Blob Storage (Azurite emulator). Update README service checklist to mark ContentService done.",
+      "title": "Author docs/services/enrollment.md, sync entities.md + events.md + architecture.md + README",
+      "spec": "Create docs/services/enrollment.md with shipped endpoints, request/response shapes, IsFree gate, duplicate gate, CourseArchived suspension flow, published events (UserEnrolled, EnrollmentCancelled). Update docs/entities.md EnrollmentService section to match locked Enrollment shape (Status enum values, IsFree denormalisation, suspended fields). Update docs/events.md to add EnrollmentCancelled record and confirm UserEnrolled retains no EventId. Note EnrollmentService is wired into AppHost on port 5104 with Postgres lms-enrollments DB. Update README service checklist to mark EnrollmentService done.",
       "files": [
-        "docs/services/content.md",
+        "docs/services/enrollment.md",
         "docs/entities.md",
         "docs/events.md",
         "docs/architecture.md",
         "README.md"
       ],
       "depends_on": ["T10"],
-      "branch": "feature/contentservice-T11-docs",
-      "worktree": ".claude-worktrees/T11-contentservice-docs",
+      "branch": "feature/enrollmentservice-T11-docs",
+      "worktree": ".claude-worktrees/T11-enrollmentservice-docs",
       "timeout_minutes": 25,
       "acceptance": ["markdown lints pass"]
     }
