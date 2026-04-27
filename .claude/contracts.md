@@ -1,293 +1,368 @@
 # Contracts (locked — do not deviate)
 _Hash: <to be filled by orchestrator>_
 
-Feature: **LMS.CourseService** (Phase 1, service #3)
-Port: **5102** · Database: `lms_courses` (PostgreSQL) · Schema: `courses`
-ADRs: ADR-005 (snapshot/version pinning), ADR-006 (IsFree gate)
+Feature: **LMS.ContentService** (Phase 1, service #4)
+Port: **5103** · Database: `lms_content` (MongoDB) · Object storage: **Azure Blob Storage** (Azurite emulator in dev)
+ADRs: tenant-isolation (Mongo), content-pipeline (async worker), SAS-URL playback
+
+> ContentService is the only service that uses MongoDB. EF Core absolute rules
+> ("inherit TenantEntity", "global query filter") do NOT apply. They are
+> replaced with the equivalents in section 2.
 
 ---
 
-## 1. EF Core entities (LMS.CourseService.Domain)
+## 1. Project layout (locked — 4 projects)
 
-All inherit `TenantEntity` (`Id: Guid`, `TenantId: Guid`, `CreatedAt: DateTimeOffset`, `UpdatedAt: DateTimeOffset`).
-Schema name: `courses`.
-
-```csharp
-public class Course : TenantEntity
-{
-    public Guid InstructorId { get; set; }
-    public string Title { get; set; } = default!;          // <= 200
-    public string Description { get; set; } = default!;    // <= 4000
-    public Guid? ThumbnailContentId { get; set; }
-    public string Category { get; set; } = default!;       // <= 80
-    public string[] Tags { get; set; } = [];               // text[]
-    public DifficultyLevel Difficulty { get; set; }
-    public string Language { get; set; } = "vi";           // ISO-639-1
-    public CourseStatus Status { get; set; } = CourseStatus.Draft;
-    public bool IsFree { get; set; } = true;               // ADR-006
-    public int Version { get; set; } = 1;                  // ADR-005
-    public int EnrollmentCount { get; set; }
-    public DateTimeOffset? PublishedAt { get; set; }
-    public ICollection<CourseSection> Sections { get; set; } = [];
-    public ICollection<CoursePrerequisite> Prerequisites { get; set; } = [];
-}
-
-public class CourseSection : TenantEntity
-{
-    public Guid CourseId { get; set; }
-    public Course Course { get; set; } = default!;
-    public string Title { get; set; } = default!;          // <= 200
-    public int Order { get; set; }
-    public ICollection<CourseLesson> Lessons { get; set; } = [];
-}
-
-public class CourseLesson : TenantEntity
-{
-    public Guid SectionId { get; set; }
-    public CourseSection Section { get; set; } = default!;
-    public Guid CourseId { get; set; }                     // denormalised for query speed
-    public string Title { get; set; } = default!;          // <= 200
-    public Guid ContentItemId { get; set; }
-    public int? DurationSeconds { get; set; }              // updated via ContentProcessingCompleted
-    public bool IsFreePreview { get; set; }
-    public bool IsOptional { get; set; }
-    public int Order { get; set; }
-}
-
-public class CoursePrerequisite : TenantEntity
-{
-    public Guid CourseId { get; set; }
-    public Guid PrerequisiteCourseId { get; set; }
-}
-
-public class CourseSnapshot : TenantEntity
-{
-    public Guid CourseId { get; set; }
-    public int Version { get; set; }
-    public string StructureJson { get; set; } = default!;  // jsonb
-    public DateTimeOffset SnapshotAt { get; set; } = DateTimeOffset.UtcNow;
-}
-
-public enum CourseStatus { Draft, Published, Archived }
-public enum DifficultyLevel { Beginner, Intermediate, Advanced }
+```
+src/services/LMS.ContentService/
+  LMS.ContentService.Domain/          # documents, enums, repository + storage + processor interfaces, DTO records
+  LMS.ContentService.Infrastructure/  # MongoDB context, repos, Azure Blob storage client, MassTransit wiring
+  LMS.ContentService.Api/             # Minimal API endpoints, validators, Program.cs, header tenancy
+  LMS.ContentService.Worker/          # IHostedService background processor (Migrator-equivalent slot)
 ```
 
-### Indexes
-- `Course`: `(TenantId, Status)`, `(TenantId, InstructorId)`, `(TenantId, Category)`, GIN on `Tags`
-- `CourseSection`: unique `(CourseId, Order)`
-- `CourseLesson`: unique `(SectionId, Order)`, index `(CourseId)`, index `(ContentItemId)`
-- `CoursePrerequisite`: unique `(CourseId, PrerequisiteCourseId)`
-- `CourseSnapshot`: unique `(CourseId, Version)`
+The Worker project replaces the Migrator slot in AppHost: it is registered
+as a long-running project (NOT `WaitForCompletion`). MongoDB needs no schema
+migration; index initialisation runs on Api startup (see section 3).
 
-### Global filter
-`OnModelCreating` applies `e => e.TenantId == CurrentTenantId` to every `TenantEntity` descendant
-(replicate `IdentityDbContext` pattern verbatim).
+References:
+- Domain → `LMS.SharedKernel`
+- Infrastructure → Domain, `LMS.Contracts`, `LMS.ServiceDefaults`
+- Api → Infrastructure, `LMS.ServiceDefaults`
+- Worker → Infrastructure, `LMS.ServiceDefaults`
 
-### Outbox
-`AddEntityFrameworkOutbox<CourseDbContext>` — outbox tables created via the same migration.
-
-### Migration filename
-`20260427_001_InitialCourseSchema.cs` (initial migration covers all entities + outbox).
+NuGet packages (Infrastructure):
+- `Aspire.Azure.Storage.Blobs` (~9.4.1-preview.1.25408.4 to align with other Aspire packages)
+- `Azure.Storage.Blobs`
+- `MongoDB.Driver`
+- `MassTransit.MongoDb` (transactional outbox; if unavailable on target version, fall back to MassTransit's RabbitMQ in-memory outbox + idempotent consumers)
 
 ---
 
-## 2. Events — `LMS.Contracts/Course/`
+## 2. MongoDB documents (LMS.ContentService.Domain)
 
-### Published
+Tenant safety pattern (Mongo replacement for EF global filter):
+- All documents implement `ITenantDocument { Guid TenantId { get; } }`.
+- All repository methods MUST take `tenantId` as first parameter and apply
+  `Builders<T>.Filter.Eq(d => d.TenantId, tenantId)` on every query.
+- Architecture test enforces: every method on every repo accepts `tenantId`.
 
 ```csharp
-public sealed record CoursePublished(
-    Guid EventId,
-    Guid TenantId,
-    Guid CourseId,
-    Guid InstructorId,
-    int Version,
+public interface ITenantDocument
+{
+    Guid TenantId { get; }
+}
+
+public abstract class ContentDocument : ITenantDocument
+{
+    [BsonId] public ObjectId MongoId { get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();          // surrogate Guid (used in API)
+    public Guid TenantId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+[BsonCollection("content_items")]
+public class ContentItem : ContentDocument
+{
+    public Guid UploadedBy { get; set; }
+    public string OriginalFileName { get; set; } = default!;   // <= 260
+    public string MimeType { get; set; } = default!;           // e.g. "video/mp4"
+    public ContentType Type { get; set; }
+    public ContentStatus Status { get; set; } = ContentStatus.Pending;
+    public long SizeBytes { get; set; }
+    public string StorageContainer { get; set; } = default!;   // Azure blob container (e.g. "lms-content")
+    public string StorageKey { get; set; } = default!;         // canonical blob path (see section 5)
+    public int? DurationSeconds { get; set; }
+    public string? HlsManifestKey { get; set; }                // blob path (NOT a public URL)
+    public string? ThumbnailKey { get; set; }                  // blob path
+    public string? FailureReason { get; set; }
+    public bool IsDeleted { get; set; }                        // soft delete
+}
+
+public enum ContentType  { Video, Pdf, Image, Other }
+public enum ContentStatus { Pending, Uploaded, Processing, Ready, Failed }
+```
+
+> Note: `docs/entities.md` shows older shape (`ContentItemId` Guid + `S3Key`).
+> Locked shape uses `Id` (Guid) and `StorageKey`. T11 docs-writer reconciles
+> `docs/entities.md`.
+
+### Indexes (created at Api startup via `IndexInitializer`)
+- `content_items`: `{ TenantId: 1, CreatedAt: -1 }`,
+  `{ TenantId: 1, Status: 1 }`,
+  `{ TenantId: 1, UploadedBy: 1 }`,
+  unique `{ TenantId: 1, Id: 1 }`.
+
+---
+
+## 3. Events — `LMS.Contracts/Content/`
+
+### Already exists (do NOT modify)
+`src/LMS.Contracts/Content/ContentProcessingCompleted.cs`:
+```csharp
+public sealed record ContentProcessingCompleted(
+    Guid EventId, Guid ContentItemId, Guid TenantId,
+    string HlsManifestUrl, int DurationSeconds, DateTimeOffset OccurredAt);
+```
+
+### New records to add (T1)
+```csharp
+public sealed record ContentUploaded(
+    Guid EventId, Guid ContentItemId, Guid TenantId,
+    Guid UploadedBy, ContentType Type, long SizeBytes,
     DateTimeOffset OccurredAt);
+
+public sealed record ContentProcessingFailed(
+    Guid EventId, Guid ContentItemId, Guid TenantId,
+    string Reason, DateTimeOffset OccurredAt);
 ```
 
-NOTE: `docs/events.md` currently shows `CoursePublished` without `EventId`. We **align with the
-absolute rule** "every event has EventId, TenantId, OccurredAt" — `EventId` is added.
-`docs/events.md` is updated in T11.
+`ContentType` enum lives in `LMS.Contracts.Content` (mirrors Domain enum
+values; the two enums use identical underlying ints).
 
-### Consumed (no new contracts authored — these already exist or will when their owners ship)
+### Publish flow
+- Api: on successful upload (multipart bytes received + persisted to Blob
+  Storage) → publish `ContentUploaded` via outbox (MongoDB transactional
+  outbox — see section 4).
+- Worker: consumes `ContentUploaded`, runs processor stub, on success
+  publishes `ContentProcessingCompleted`, on failure publishes
+  `ContentProcessingFailed`.
 
-- `LMS.Contracts.Content.ContentProcessingCompleted(Guid ContentItemId, Guid TenantId, string HlsManifestUrl, int DurationSeconds, DateTimeOffset OccurredAt)`
-  → updates `CourseLesson.DurationSeconds` for every lesson with matching `ContentItemId` in tenant.
-- `LMS.Contracts.Identity.UserEnrolled(Guid UserId, Guid CourseId, Guid TenantId, string PlanType, DateTimeOffset OccurredAt)`
-  → atomic increment of `Course.EnrollmentCount`.
-
-Both consumers idempotent. `UserEnrolled` idempotency uses inbox table keyed on
-`(UserId, CourseId)` natural composite since the event lacks `EventId`.
+> `docs/events.md` currently shows `ContentProcessingCompleted` without
+> `EventId`. Locked record (already in repo) carries `EventId`. T11 reconciles
+> and adds `ContentUploaded` + `ContentProcessingFailed`.
 
 ---
 
-## 3. HTTP endpoints (LMS.CourseService.Api)
+## 4. MassTransit + outbox
 
-All routes mounted under `/api/courses` and reachable through gateway YARP route
-(`/api/courses/**` → `courses` cluster, wired in T7).
+- Use **MassTransit MongoDB outbox** (`AddMongoDbOutbox`). Collection name
+  `mt_outbox` per tenant-agnostic Mongo db `lms_content`.
+- Inbox: consumers idempotent on `EventId`.
+- Worker uses MassTransit hosted bus; Api uses publish-only endpoint.
+
+---
+
+## 5. Azure Blob Storage (Azurite in dev)
+
+- **Single container per environment**: `lms-content` (configurable). Created
+  on startup if missing (private access).
+- **Blob path convention** (tenant-prefixed for blast-radius isolation):
+  ```
+  {tenantId}/{contentItemId}/original/{filename}
+  {tenantId}/{contentItemId}/hls/master.m3u8
+  {tenantId}/{contentItemId}/thumbs/poster.jpg
+  ```
+- **Upload flow (Phase 1)**: API accepts `multipart/form-data` directly.
+  Bytes stream through the Api into Blob Storage via `BlobClient.UploadAsync`.
+  No client-side presigned upload URL — keeps everything behind the gateway.
+- **Download / playback**: Azure SAS tokens
+  (`BlobClient.GenerateSasUri(BlobSasPermissions.Read, expiresOn)`),
+  TTL 60 min for playback (Phase 1 stub — Phase 2 may shorten via CDN signing).
+- **Connection**: Aspire injects connection string under resource name
+  `"storage"` (binds to `BlobServiceClient` via `Aspire.Azure.Storage.Blobs`).
+
+`IContentStorageService` (Domain interface):
+
+```csharp
+public interface IContentStorageService
+{
+    Task<string> UploadAsync(
+        Guid tenantId, Guid contentItemId,
+        string fileName, string contentType,
+        Stream data, CancellationToken ct = default);
+
+    Task<Uri> GetDownloadUriAsync(
+        Guid tenantId, Guid contentItemId,
+        string storageKey, TimeSpan expiry,
+        CancellationToken ct = default);
+
+    Task DeleteAsync(
+        Guid tenantId, Guid contentItemId,
+        string storageKey, CancellationToken ct = default);
+
+    Task<Stream> OpenReadAsync(
+        Guid tenantId, string storageKey,
+        CancellationToken ct = default);   // used by Worker
+}
+```
+
+Implementation: `AzureBlobContentStorageService` uses `BlobServiceClient`
+(injected by `Aspire.Azure.Storage.Blobs`) → `BlobContainerClient("lms-content")`
+→ `BlobClient(path)`. `UploadAsync` returns the canonical `storageKey`
+(blob path). All methods enforce that the blob path begins with
+`{tenantId}/{contentItemId}/`; cross-tenant key access throws
+`UnauthorizedAccessException`. `StorageKeyBuilder` is the single producer
+of paths.
+
+---
+
+## 6. HTTP endpoints (LMS.ContentService.Api)
+
+All routes mounted under `/api/content`, gateway YARP route already exists
+in `appsettings.json` (`/api/content/{**rest}` → `content` cluster).
 
 Headers (forwarded by gateway, never re-validated):
-`X-User-Id`, `X-Tenant-Id`, `X-Roles`.
+`X-User-Id`, `X-Tenant-Id`, `X-Roles`. Public reads still require
+`X-Tenant-Id` (else `400 TENANT_REQUIRED`).
 
 | Method | Path | Auth | Request | 2xx | Errors |
 |---|---|---|---|---|---|
-| GET | `/api/courses` | public | query: `category?, tag?, difficulty?, page=1, pageSize=20` | 200 `Page<CourseSummary>` | 400 |
-| POST | `/api/courses` | role: `instructor`/`admin` | `CreateCourseRequest` | 201 `CourseDetail` | 400, 401, 403 |
-| GET | `/api/courses/{id}` | public | — | 200 `CourseDetail` | 404 |
-| PUT | `/api/courses/{id}` | owner instructor or admin | `UpdateCourseRequest` | 200 `CourseDetail` | 400, 403, 404, 409 |
-| POST | `/api/courses/{id}/publish` | owner instructor | — | 200 `CourseDetail` | 403, 404, 409 (no published lesson), 409 `PAYMENT_REQUIRED` |
-| POST | `/api/courses/{id}/unpublish` | owner instructor or admin | — | 200 `CourseDetail` | 403, 404 |
-| POST | `/api/courses/{id}/duplicate` | owner instructor or admin | — | 201 `CourseDetail` | 403, 404 |
-| GET | `/api/courses/{id}/syllabus` | public | — | 200 `CourseSyllabus` | 404 |
-| POST | `/api/courses/{id}/sections` | owner instructor | `SectionRequest` | 201 `SectionDto` | 400, 403, 404 |
-| PUT | `/api/courses/{id}/sections/{sid}` | owner instructor | `SectionRequest` | 200 `SectionDto` | 400, 403, 404 |
-| DELETE | `/api/courses/{id}/sections/{sid}` | owner instructor | — | 204 | 403, 404 |
-| POST | `/api/courses/{id}/sections/{sid}/lessons` | owner instructor | `CreateLessonRequest` | 201 `LessonDto` | 400, 403, 404 |
-| PUT | `/api/courses/{id}/sections/{sid}/lessons/{lid}` | owner instructor | `UpdateLessonRequest` | 200 `LessonDto` | 400, 403, 404 |
-| DELETE | `/api/courses/{id}/sections/{sid}/lessons/{lid}` | owner instructor | — | 204 | 403, 404 |
+| POST | `/api/content/uploads` | role: `instructor`/`admin` | `multipart/form-data` (file + `type` field) | 201 `ContentItemDto` | 400, 401, 403, 413 |
+| GET | `/api/content/{id}` | tenant scope | — | 200 `ContentItemDto` | 404 |
+| GET | `/api/content/{id}/playback` | tenant scope | — | 200 `PlaybackUrlDto` | 404, 409 (not ready) |
+| GET | `/api/content` | tenant scope | query: `type?, status?, uploadedBy?, page=1, pageSize=20` | 200 `Page<ContentItemDto>` | 400 |
+| DELETE | `/api/content/{id}` | uploader or admin | — | 204 | 403, 404 |
 
-### DTO shapes
+### DTOs
 ```csharp
-public record CreateCourseRequest(string Title, string Description, string Category,
-    string[] Tags, DifficultyLevel Difficulty, string Language, bool IsFree, Guid? ThumbnailContentId);
-public record UpdateCourseRequest(string Title, string Description, string Category,
-    string[] Tags, DifficultyLevel Difficulty, string Language, bool IsFree, Guid? ThumbnailContentId);
-public record SectionRequest(string Title, int Order);
-public record CreateLessonRequest(string Title, Guid ContentItemId, int Order, bool IsFreePreview, bool IsOptional);
-public record UpdateLessonRequest(string Title, Guid ContentItemId, int Order, bool IsFreePreview, bool IsOptional);
+// multipart upload form fields (file part + form fields)
+public record UploadFormFields(ContentType Type);
 
-public record CourseSummary(Guid Id, string Title, string Category, string[] Tags,
-    DifficultyLevel Difficulty, string Language, CourseStatus Status, bool IsFree,
-    int Version, int EnrollmentCount, Guid InstructorId, DateTimeOffset? PublishedAt);
-public record CourseDetail(/* CourseSummary fields + */ string Description, Guid? ThumbnailContentId,
-    IReadOnlyList<SectionDto> Sections, IReadOnlyList<Guid> Prerequisites);
-public record SectionDto(Guid Id, string Title, int Order, IReadOnlyList<LessonDto> Lessons);
-public record LessonDto(Guid Id, string Title, Guid ContentItemId, int? DurationSeconds,
-    int Order, bool IsFreePreview, bool IsOptional);
-public record CourseSyllabus(Guid CourseId, int Version, IReadOnlyList<SyllabusSection> Sections);
-public record SyllabusSection(Guid Id, string Title, int Order, IReadOnlyList<SyllabusLesson> Lessons);
-public record SyllabusLesson(Guid Id, string Title, int Order, int? DurationSeconds, bool IsFreePreview);
+public record ContentItemDto(
+    Guid Id, Guid TenantId, Guid UploadedBy,
+    string OriginalFileName, string MimeType,
+    ContentType Type, ContentStatus Status,
+    long SizeBytes, int? DurationSeconds,
+    string? HlsManifestUrl, string? ThumbnailUrl,
+    string? FailureReason,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+
+public record PlaybackUrlDto(
+    Guid ContentItemId, Uri Url, DateTimeOffset ExpiresAt,
+    int? DurationSeconds);
+
 public record Page<T>(IReadOnlyList<T> Items, int Page, int PageSize, int Total);
 ```
 
+### Validation rules
+- `FileName` length 1..260; `MimeType` whitelist
+  (`video/mp4`, `video/webm`, `application/pdf`, `image/jpeg`, `image/png`).
+- `SizeBytes`: > 0, ≤ 5 GiB for video, ≤ 100 MiB for pdf/image.
+- Multipart upload limits configured via Kestrel `MaxRequestBodySize` and
+  `FormOptions.MultipartBodyLengthLimit` to match max video size.
+
 ### Error shape
-RFC7807 `ProblemDetails`. For payment gate:
-```
-HTTP/1.1 409 Conflict
-Content-Type: application/problem+json
-{ "type": "https://lms/errors/payment-required",
-  "title": "Payment required",
-  "status": 409,
-  "code": "PAYMENT_REQUIRED",
-  "courseId": "<guid>" }
-```
+RFC7807 `ProblemDetails`. `404` for cross-tenant lookups (never `403` — leak-safe).
 
 ---
 
-## 4. Payment gate rule (ADR-006)
+## 7. Worker processing flow
 
-- `POST /api/courses/{id}/publish`: if `Course.IsFree == false` → return **409 PAYMENT_REQUIRED**
-  (stub until Phase 2 BillingService exists). The course remains in `Draft`. No event published.
-- All other writes ignore `IsFree` for now.
-
----
-
-## 5. Publish flow (ADR-005, locked)
-
-1. Load `Course` with sections+lessons, validate ownership and `Status == Draft`.
-2. Reject with `409 NoPublishedLesson` if course has 0 lessons.
-3. If `!IsFree` → `409 PAYMENT_REQUIRED` (no state change).
-4. Begin transaction:
-   - `Course.Version += 1`
-   - Serialize (`Sections + Lessons` projection) → `StructureJson`
-   - Insert `CourseSnapshot { CourseId, Version=Course.Version, StructureJson, SnapshotAt=now }`
-   - `Course.Status = Published`, `Course.PublishedAt = now`
-   - Outbox-publish `CoursePublished(EventId, TenantId, CourseId, InstructorId, Version, OccurredAt)`
-5. Commit. MassTransit EF outbox delivers reliably to RabbitMQ.
+1. Worker consumes `ContentUploaded`.
+2. Loads `ContentItem` (with `tenantId` predicate). If `Status != Uploaded`
+   or `IsDeleted` → ack and exit (idempotent).
+3. Sets `Status = Processing`, `UpdatedAt = now`.
+4. Phase 1 stub: synthesises HLS manifest key + thumbnail key + duration
+   (no real ffmpeg). Real transcoding deferred — interface
+   `IVideoProcessor.ProcessAsync(ContentItem, ct)` returns
+   `ProcessingResult(string HlsManifestKey, string ThumbnailKey, int DurationSeconds)`.
+5. On success: update doc (`Status=Ready`, keys, duration) and outbox-publish
+   `ContentProcessingCompleted` (with `HlsManifestUrl` = SAS download URI
+   for the manifest, TTL 60 min).
+6. On failure: `Status=Failed`, `FailureReason`, publish
+   `ContentProcessingFailed`.
+7. Retry policy: MassTransit `UseMessageRetry(r => r.Intervals(1s, 5s, 30s))`
+   then poison.
 
 ---
 
-## 6. Domain abstractions to copy (do NOT import from IdentityService)
-
-- `ITenantContext` + `HeaderTenantContext` — replicate from
-  `src/services/LMS.IdentityService/LMS.IdentityService.Domain/Abstractions/ITenantContext.cs`
-- `AuthorizationHelpers` — replicate (reads `X-Roles` from `HttpContext.Items`/middleware).
-- `CourseDbContext` — mirrors `IdentityDbContext` global-filter + `SaveChangesAsync` pattern.
-
-Repositories (interfaces in Domain, EF impls in Infrastructure):
-- `ICourseRepository`, `ISectionRepository`, `ILessonRepository`, `ICourseSnapshotRepository`.
-All read methods accept `tenantId` explicitly as a defence-in-depth predicate.
-
----
-
-## 7. Aspire AppHost wiring (locked diff)
+## 8. AppHost wiring (locked diff)
 
 In `src/LMS.AppHost/Program.cs`:
 
 ```csharp
-var courseDb = postgres.AddDatabase("lms-courses");
+var contentDb = mongo.AddDatabase("lms-content");
 
-var courseMigrator = builder.AddProject<Projects.LMS_CourseService_Migrator>("course-migrator")
-    .WithReference(courseDb)
-    .WaitFor(courseDb);
+var storage = builder.AddAzureStorage("storage").RunAsEmulator();   // Azurite in dev
+var contentBlobs = storage.AddBlobs("content-blobs");
 
-var course = builder.AddProject<Projects.LMS_CourseService_Api>("courses")
-    .WithReference(courseDb)
+var content = builder.AddProject<Projects.LMS_ContentService_Api>("content")
+    .WithReference(contentDb)
     .WithReference(rabbitmq)
-    .WaitForCompletion(courseMigrator);
+    .WithReference(contentBlobs)
+    .WaitFor(contentDb)
+    .WaitFor(contentBlobs)
+    .WaitFor(rabbitmq);
 
-gateway.WithReference(course);
+var contentWorker = builder.AddProject<Projects.LMS_ContentService_Worker>("content-worker")
+    .WithReference(contentDb)
+    .WithReference(rabbitmq)
+    .WithReference(contentBlobs)
+    .WaitFor(content);
+
+gateway.WithReference(content);
 ```
 
-YARP route for `/api/courses/**` → `courses` cluster. (Gateway transforms inject
-`X-User-Id` / `X-Tenant-Id` / `X-Roles`.)
+Gateway YARP route `/api/content/{**rest}` already configured in
+`src/gateway/LMS.Gateway/appsettings.json`. Verify the gateway's
+`MaxRequestBodySize` accommodates large multipart uploads (≤ 5 GiB).
+If not, raise it (separate task in T7 spec).
 
 ---
 
-## 8. Project layout (locked)
+## 9. Configuration keys
 
 ```
-src/services/LMS.CourseService/
-  LMS.CourseService.Domain/          # entities, enums, ITenantContext, repo interfaces, DTO records
-  LMS.CourseService.Infrastructure/  # CourseDbContext, EF configs, repo impls, MassTransit outbox + consumers
-  LMS.CourseService.Api/             # Minimal API endpoints, validators, Program.cs, HeaderTenantContext, AuthorizationHelpers
-  LMS.CourseService.Migrator/        # IHostedService that runs migrations on start
+ConnectionStrings:lms-content              (Aspire-injected MongoDB connection string)
+ConnectionStrings:rabbitmq                 (Aspire-injected)
+ConnectionStrings:content-blobs            (Aspire-injected Azure Blob connection — Azurite in dev)
+AzureBlob:Container                        lms-content
+AzureBlob:DownloadUrlTtlMinutes            60
+Content:MaxVideoSizeBytes                  5368709120
+Content:MaxDocumentSizeBytes               104857600
 ```
+
+Aspire's `AddAzureBlobClient("content-blobs")` reads
+`ConnectionStrings:content-blobs` automatically.
 
 ---
 
-## 9. Tests (locked surface)
+## 10. Tests (locked surface)
 
-- Unit: publish flow rules, payment gate, snapshot serialization, validators.
-- Integration (`LMS.IntegrationTests`):
-  - Tenant isolation: cannot read/write across tenants.
-  - Payment gate: publish IsFree=false → 409 PAYMENT_REQUIRED.
-  - Publish happy path emits `CoursePublished` (MassTransit test harness).
-  - Consumer: `ContentProcessingCompleted` updates lesson duration.
-  - Consumer: `UserEnrolled` increments EnrollmentCount idempotently.
-- Architecture: every entity inherits `TenantEntity`; DbContext has global filter.
-- Contract: `CoursePublished` shape stable.
+Unit (in Api/Domain test projects):
+- Storage key builder produces tenant-prefixed paths; rejects cross-tenant.
+- Validators (size, mime).
+- Worker processor stub idempotency (re-handle of same `EventId` no-op).
+
+Integration (`LMS.IntegrationTests/ContentService/`) — Testcontainers
+Mongo + Azurite (`mcr.microsoft.com/azure-storage/azurite`) + RabbitMQ:
+- Tenant isolation pair: tenant A cannot GET/DELETE tenant B's item (404).
+- Multipart upload to `POST /api/content/uploads` persists blob under
+  tenant-prefixed path and returns 201 `ContentItemDto`.
+- Upload publishes `ContentUploaded` (MassTransit harness).
+- Worker consumes `ContentUploaded` → publishes `ContentProcessingCompleted`,
+  doc Status flips Pending → Uploaded → Processing → Ready.
+- `GET /{id}/playback` returns SAS URI only when `Status=Ready`.
+- Soft delete: deleted item returns 404 on subsequent GET.
+
+Architecture (`LMS.ArchitectureTests`):
+- Every document in `LMS.ContentService.Domain.Documents` implements
+  `ITenantDocument`.
+- Every method on every `I*Repository` interface accepts a `Guid tenantId`
+  parameter (reflection check).
+
+Contract (`LMS.ContractTests`):
+- `ContentUploaded`, `ContentProcessingCompleted`, `ContentProcessingFailed`
+  shape stable.
 
 ---
 
-## 10. Decisions (locked — approved by product owner 2026-04-27)
+## 11. Open decisions (auto-resolved — flagged for human review in summary)
 
-1. **`CourseArchived` event** — `POST /{id}/unpublish` publishes `CourseArchived` via outbox.
-   Record (add to `LMS.Contracts/Course/CourseArchived.cs`):
-   ```csharp
-   public sealed record CourseArchived(
-       Guid EventId, Guid TenantId, Guid CourseId,
-       Guid InstructorId, DateTimeOffset OccurredAt);
-   ```
-   EnrollmentService will consume this in Phase 1 to suspend active enrollments.
-
-2. **Public endpoint tenant scope** — Phase 1: read `X-Tenant-Id` header only (gateway
-   always forwards it, even for unauthenticated requests). Slug-based resolution is Phase 2.
-   If `X-Tenant-Id` is missing/invalid on public GETs → `400 TENANT_REQUIRED`.
-
-3. **Owner check** — "owner-or-admin" pattern:
-   - `Course.InstructorId == ctx.UserId` → allowed (any matching instructor)
-   - role is `admin` or `org-admin` → allowed (bypass ownership)
-   - Otherwise → `403 FORBIDDEN`
-   Apply this to: `PUT /{id}`, `POST /{id}/publish`, `POST /{id}/unpublish`,
-   `POST /{id}/duplicate`, all section and lesson write endpoints.
+1. **Worker collocated vs separate project**: chose **separate Worker project**
+   to mirror the 4-project pattern (Migrator slot replaced by Worker).
+2. **Object storage**: switched to **Azure Blob Storage** via
+   `Aspire.Hosting.Azure.AddAzureStorage("storage").RunAsEmulator()`
+   (Azurite in dev). Replaces MinIO; native Aspire integration removes
+   the bespoke container wiring.
+3. **Upload flow**: Phase 1 uses **direct multipart POST through the Api**
+   (no presigned client-side upload). All bytes traverse the gateway → Api
+   → Blob Storage. Presigned/SAS uploads can be added Phase 2 if size
+   pressure demands it.
+4. **`ContentUploaded` event** is NEW. Added to `LMS.Contracts.Content`.
+   `docs/events.md` will gain this record in T11.
+5. **`ContentType` enum lives in both Domain and Contracts** with identical
+   ordinal values. Architecture test asserts equality.
+6. **Soft delete only** in Phase 1 — physical blob cleanup deferred.

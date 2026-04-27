@@ -79,14 +79,19 @@ public record CourseCompleted(
     Guid UserId, Guid CourseId, Guid TenantId,
     DateTimeOffset OccurredAt);
 
+public record ContentUploaded(
+    Guid EventId, Guid ContentItemId, Guid TenantId,
+    Guid UploadedBy, ContentType Type, long SizeBytes,
+    DateTimeOffset OccurredAt);
+
 public record ContentProcessingCompleted(
-    Guid ContentItemId, Guid TenantId,
+    Guid EventId, Guid ContentItemId, Guid TenantId,
     string HlsManifestUrl, int DurationSeconds,
     DateTimeOffset OccurredAt);
 
 public record ContentProcessingFailed(
-    Guid ContentItemId, Guid TenantId,
-    string Error, DateTimeOffset OccurredAt);
+    Guid EventId, Guid ContentItemId, Guid TenantId,
+    string Reason, DateTimeOffset OccurredAt);
 
 public record ContentCaptioned(
     Guid ContentItemId, Guid TenantId,
@@ -254,7 +259,9 @@ public record LabSessionTerminated(
 | `UserEnrolled` | EnrollmentService | ProgressService (seed record), CourseService (increment count), NotificationWorker |
 | `LessonCompleted` | ProgressService | GamificationService*, NotificationWorker |
 | `CourseCompleted` | ProgressService | CertificateService, GamificationService* |
-| `ContentProcessingCompleted` | ContentService | CourseService (update duration) |
+| `ContentUploaded` | ContentService.Api | ContentService.Worker (trigger processing pipeline) |
+| `ContentProcessingCompleted` | ContentService.Worker | CourseService (update lesson duration), NotificationWorker (instructor notice) |
+| `ContentProcessingFailed` | ContentService.Worker | NotificationWorker (alert instructor) |
 | `AssessmentSubmitted` | AssessmentService | ProgressService, GamificationService* |
 | `CredentialIssued` | CertificateService | NotificationWorker |
 

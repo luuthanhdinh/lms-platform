@@ -1,140 +1,136 @@
 {
-  "feature": "LMS.CourseService — course catalog, lifecycle (draft/published/archived), section+lesson CRUD, payment gate stub, MassTransit publish/consume",
+  "feature": "LMS.ContentService — MongoDB-backed content service with Azure Blob Storage (Azurite in dev), async processing worker, multipart upload + SAS playback URLs, MassTransit publish/consume",
   "phase": 1,
   "complexity": "L",
   "tasks": [
     {
       "id": "T1",
       "agent": "events-architect",
-      "title": "Lock CoursePublished event in LMS.Contracts",
-      "spec": "Add src/LMS.Contracts/Course/CoursePublished.cs as a sealed record exactly per .claude/contracts.md section 2 (EventId, TenantId, CourseId, InstructorId, Version, OccurredAt). Mirror the XML-doc style of src/LMS.Contracts/Identity/UserRegistered.cs. Verify ContentProcessingCompleted and UserEnrolled records are present (or stub minimal records under LMS.Contracts/Content and LMS.Contracts/Identity if missing) — do NOT modify their shapes beyond what events.md already prescribes. Defer the docs/events.md EventId update to T11.",
-      "files": ["src/LMS.Contracts/Course/CoursePublished.cs"],
+      "title": "Add ContentUploaded + ContentProcessingFailed records to LMS.Contracts",
+      "spec": "Add src/LMS.Contracts/Content/ContentUploaded.cs and src/LMS.Contracts/Content/ContentProcessingFailed.cs as sealed records exactly per .claude/contracts.md section 3. Add src/LMS.Contracts/Content/ContentType.cs enum (Video, Pdf, Image, Other) with identical ordinal values to the Domain enum. Do NOT modify the existing ContentProcessingCompleted.cs. Mirror XML-doc style of existing Content/ContentProcessingCompleted.cs. Defer docs/events.md updates to T11.",
+      "files": [
+        "src/LMS.Contracts/Content/ContentUploaded.cs",
+        "src/LMS.Contracts/Content/ContentProcessingFailed.cs",
+        "src/LMS.Contracts/Content/ContentType.cs"
+      ],
       "depends_on": [],
-      "branch": "feature/courseservice-T1-events",
-      "worktree": ".claude-worktrees/T1-courseservice-events",
+      "branch": "feature/contentservice-T1-events",
+      "worktree": ".claude-worktrees/T1-contentservice-events",
       "timeout_minutes": 15,
       "acceptance": ["dotnet build src/LMS.Contracts/LMS.Contracts.csproj"]
     },
     {
       "id": "T2",
       "agent": "backend",
-      "title": "Scaffold 4-project layout for LMS.CourseService",
-      "spec": "Create the four projects under src/services/LMS.CourseService/ (Domain, Infrastructure, Api, Migrator) with project references mirroring LMS.IdentityService exactly. Add the projects to LMS.slnx. Empty class-library shells (no implementation), Program.cs stubs in Api+Migrator. ServiceDefaults reference on Api+Migrator, LMS.Contracts reference on Infrastructure+Api, LMS.SharedKernel reference on Domain. Use port 5102 in Api launchSettings.json.",
+      "title": "Scaffold 4-project layout for LMS.ContentService",
+      "spec": "Create the four projects under src/services/LMS.ContentService/ (Domain, Infrastructure, Api, Worker) mirroring LMS.CourseService project metadata exactly (TFM net9.0, ImplicitUsings, Nullable). Worker replaces Migrator. Project references per contracts.md section 1. Add all four projects to LMS.slnx. Empty class-library shells for Domain/Infrastructure; Program.cs stubs in Api+Worker. Api launchSettings.json port 5103. ServiceDefaults reference on Api+Worker.",
       "files": [
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/LMS.CourseService.Domain.csproj",
-        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/LMS.CourseService.Infrastructure.csproj",
-        "src/services/LMS.CourseService/LMS.CourseService.Api/LMS.CourseService.Api.csproj",
-        "src/services/LMS.CourseService/LMS.CourseService.Api/Program.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Api/Properties/launchSettings.json",
-        "src/services/LMS.CourseService/LMS.CourseService.Migrator/LMS.CourseService.Migrator.csproj",
-        "src/services/LMS.CourseService/LMS.CourseService.Migrator/Program.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Domain/LMS.ContentService.Domain.csproj",
+        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/LMS.ContentService.Infrastructure.csproj",
+        "src/services/LMS.ContentService/LMS.ContentService.Api/LMS.ContentService.Api.csproj",
+        "src/services/LMS.ContentService/LMS.ContentService.Api/Program.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Api/Properties/launchSettings.json",
+        "src/services/LMS.ContentService/LMS.ContentService.Worker/LMS.ContentService.Worker.csproj",
+        "src/services/LMS.ContentService/LMS.ContentService.Worker/Program.cs",
         "LMS.slnx"
       ],
       "depends_on": [],
-      "branch": "feature/courseservice-T2-scaffold",
-      "worktree": ".claude-worktrees/T2-courseservice-scaffold",
+      "branch": "feature/contentservice-T2-scaffold",
+      "worktree": ".claude-worktrees/T2-contentservice-scaffold",
       "timeout_minutes": 25,
       "acceptance": ["dotnet build LMS.slnx"]
     },
     {
       "id": "T3",
       "agent": "backend",
-      "title": "Domain layer: entities, enums, repository interfaces, ITenantContext, DTOs",
-      "spec": "Implement all entities exactly per contracts.md section 1 (Course, CourseSection, CourseLesson, CoursePrerequisite, CourseSnapshot, CourseStatus, DifficultyLevel). Replicate ITenantContext + AuthorizationHelpers patterns from LMS.IdentityService.Domain (do NOT cross-reference). Define repository interfaces (ICourseRepository, ISectionRepository, ILessonRepository, ICourseSnapshotRepository) with explicit tenantId predicates. Add request/response DTO records per contracts.md section 3.",
+      "title": "Domain layer: documents, enums, repository + storage + processor interfaces, DTOs",
+      "spec": "Implement ITenantDocument, ContentDocument base, ContentItem document, ContentType + ContentStatus enums per contracts.md section 2. Define IContentItemRepository (every method takes Guid tenantId), IContentStorageService per contracts.md section 5 (UploadAsync streaming bytes, GetDownloadUriAsync returning SAS Uri, DeleteAsync, OpenReadAsync), IVideoProcessor with ProcessAsync returning ProcessingResult record. Add response DTO records (ContentItemDto, PlaybackUrlDto, Page<T>) per contracts.md section 6. Define ITenantContext interface mirroring CourseService.Domain pattern.",
       "files": [
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Entities/Course.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Entities/CourseSection.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Entities/CourseLesson.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Entities/CoursePrerequisite.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Entities/CourseSnapshot.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Enums/CourseStatus.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Enums/DifficultyLevel.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Abstractions/ITenantContext.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Abstractions/AuthorizationHelpers.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Repositories/ICourseRepository.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Repositories/ISectionRepository.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Repositories/ILessonRepository.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Repositories/ICourseSnapshotRepository.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Domain/Dtos/CourseDtos.cs"
+        "src/services/LMS.ContentService/LMS.ContentService.Domain/Documents/ITenantDocument.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Domain/Documents/ContentDocument.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Domain/Documents/ContentItem.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Domain/Enums/ContentType.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Domain/Enums/ContentStatus.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Domain/Abstractions/ITenantContext.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Domain/Storage/IContentStorageService.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Domain/Processing/IVideoProcessor.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Domain/Repositories/IContentItemRepository.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Domain/Dtos/ContentDtos.cs"
       ],
       "depends_on": ["T2"],
-      "branch": "feature/courseservice-T3-domain",
-      "worktree": ".claude-worktrees/T3-courseservice-domain",
+      "branch": "feature/contentservice-T3-domain",
+      "worktree": ".claude-worktrees/T3-contentservice-domain",
       "timeout_minutes": 45,
-      "acceptance": ["dotnet build src/services/LMS.CourseService/LMS.CourseService.Domain/LMS.CourseService.Domain.csproj"]
+      "acceptance": ["dotnet build src/services/LMS.ContentService/LMS.ContentService.Domain/LMS.ContentService.Domain.csproj"]
     },
     {
       "id": "T4",
       "agent": "backend",
-      "title": "Infrastructure: CourseDbContext + EF configs + repositories + MassTransit consumers",
-      "spec": "Implement CourseDbContext (schema 'courses') replicating IdentityDbContext global tenant filter and SaveChangesAsync UpdatedAt logic. Add EF entity configurations with indexes per contracts.md section 1. Implement all repository EF impls. Add MassTransit consumers: ContentProcessingCompletedConsumer (updates CourseLesson.DurationSeconds), UserEnrolledConsumer (increments Course.EnrollmentCount, idempotent via inbox table on (UserId, CourseId)). Wire AddEntityFrameworkOutbox<CourseDbContext>. Provide DependencyInjection extension AddCourseInfrastructure(IConfiguration). Use Npgsql text[] for Tags and jsonb for StructureJson.",
+      "title": "Infrastructure: Mongo context, repos, Azure Blob storage, processor stub, MassTransit outbox + DI",
+      "spec": "Implement ContentMongoContext (IMongoDatabase wrapper) reading ConnectionStrings:lms-content. Implement MongoContentItemRepository with explicit tenantId predicate on every operation per contracts.md section 2. Implement IndexInitializer hosted service to create indexes on startup. Implement AzureBlobContentStorageService using Azure.Storage.Blobs SDK: inject BlobServiceClient via Aspire.Azure.Storage.Blobs (AddAzureBlobClient(\"content-blobs\")); use container 'lms-content' (configurable via AzureBlob:Container); ensure-create container on startup; UploadAsync streams to BlobClient.UploadAsync; GetDownloadUriAsync uses BlobClient.GenerateSasUri(BlobSasPermissions.Read, expiresOn). StorageKeyBuilder enforces {tenantId}/{contentItemId}/... prefix and rejects cross-tenant paths (UnauthorizedAccessException). Implement StubVideoProcessor (Phase 1) producing fake HLS/thumb keys + duration. Wire MassTransit MongoDB outbox (AddMongoDbOutbox) — fall back to in-memory outbox if MassTransit.MongoDb unavailable. Provide AddContentInfrastructure(IConfiguration) DI extension consumed by both Api and Worker. Required NuGet packages: Aspire.Azure.Storage.Blobs (~9.4.1-preview.1.25408.4), Azure.Storage.Blobs, MongoDB.Driver, MassTransit.MongoDb.",
       "files": [
-        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Data/CourseDbContext.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Data/Configurations/",
-        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Repositories/",
-        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Messaging/Consumers/ContentProcessingCompletedConsumer.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Messaging/Consumers/UserEnrolledConsumer.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/DependencyInjection.cs"
+        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Data/ContentMongoContext.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Data/IndexInitializer.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Repositories/MongoContentItemRepository.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Storage/AzureBlobContentStorageService.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Storage/AzureBlobOptions.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Storage/StorageKeyBuilder.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/Processing/StubVideoProcessor.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Infrastructure/DependencyInjection.cs"
       ],
       "depends_on": ["T1", "T3"],
-      "branch": "feature/courseservice-T4-infra",
-      "worktree": ".claude-worktrees/T4-courseservice-infra",
-      "timeout_minutes": 60,
-      "acceptance": ["dotnet build src/services/LMS.CourseService/LMS.CourseService.Infrastructure/LMS.CourseService.Infrastructure.csproj"]
+      "branch": "feature/contentservice-T4-infra",
+      "worktree": ".claude-worktrees/T4-contentservice-infra",
+      "timeout_minutes": 75,
+      "acceptance": ["dotnet build src/services/LMS.ContentService/LMS.ContentService.Infrastructure/LMS.ContentService.Infrastructure.csproj"]
     },
     {
       "id": "T5",
-      "agent": "db-migrator",
-      "title": "Initial EF migration + Migrator host",
-      "spec": "Generate 20260427_001_InitialCourseSchema migration covering all entities, indexes per contracts.md section 1, and MassTransit outbox/inbox tables. Implement Migrator Program.cs as an IHostedService that calls db.Database.MigrateAsync() and exits cleanly so Aspire WaitForCompletion works. Use the dotnet-ef-migrations skill.",
+      "agent": "backend",
+      "title": "Api layer: multipart upload endpoint, ContentUploaded publish, query endpoints, Program.cs",
+      "spec": "Implement all endpoints per contracts.md section 6 with Minimal API endpoint groups: POST /uploads (accepts multipart/form-data; streams file part to IContentStorageService.UploadAsync; persists ContentItem with Status=Uploaded; publishes ContentUploaded via outbox; returns 201 ContentItemDto), GET /{id}, GET /{id}/playback (calls GetDownloadUriAsync for HLS manifest with 60 min TTL; returns 409 if Status != Ready), GET / (list with paging), DELETE /{id} (soft delete). HeaderTenantContext + TenantHeaderMiddleware reads X-User-Id, X-Tenant-Id, X-Roles. FluentValidation enforces mime/size limits. Configure Kestrel MaxRequestBodySize and FormOptions.MultipartBodyLengthLimit to Content:MaxVideoSizeBytes. Wire ServiceDefaults, AddContentInfrastructure, ProblemDetails, FeatureManagement, OpenTelemetry. Listen on port 5103.",
       "files": [
-        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Migrations/20260427_001_InitialCourseSchema.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Migrations/CourseDbContextModelSnapshot.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Migrator/Program.cs"
+        "src/services/LMS.ContentService/LMS.ContentService.Api/Program.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Api/Endpoints/",
+        "src/services/LMS.ContentService/LMS.ContentService.Api/Validators/",
+        "src/services/LMS.ContentService/LMS.ContentService.Api/Tenancy/HeaderTenantContext.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Api/Tenancy/TenantHeaderMiddleware.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Api/Authorization/AuthorizationHelpers.cs"
       ],
       "depends_on": ["T4"],
-      "branch": "feature/courseservice-T5-migration",
-      "worktree": ".claude-worktrees/T5-courseservice-migration",
-      "timeout_minutes": 30,
-      "acceptance": [
-        "dotnet build src/services/LMS.CourseService/LMS.CourseService.Migrator/LMS.CourseService.Migrator.csproj",
-        "dotnet ef migrations list --project src/services/LMS.CourseService/LMS.CourseService.Infrastructure --startup-project src/services/LMS.CourseService/LMS.CourseService.Migrator"
-      ]
+      "branch": "feature/contentservice-T5-api",
+      "worktree": ".claude-worktrees/T5-contentservice-api",
+      "timeout_minutes": 75,
+      "acceptance": ["dotnet build src/services/LMS.ContentService/LMS.ContentService.Api/LMS.ContentService.Api.csproj"]
     },
     {
       "id": "T6",
       "agent": "backend",
-      "title": "Api layer: endpoints, validators, payment gate, publish flow, Program.cs",
-      "spec": "Implement all endpoints per contracts.md section 3, payment gate per section 4, publish flow per section 5. Use Minimal API + endpoint groups. HeaderTenantContext middleware reads X-User-Id, X-Tenant-Id, X-Roles. Use FluentValidation for request DTOs. Public endpoints (GET catalogue, GET detail, GET syllabus) bypass auth. Owner-instructor checks via AuthorizationHelpers. Outbox-publish CoursePublished from publish endpoint. Wire ServiceDefaults, MassTransit, OpenTelemetry, FeatureManagement, ProblemDetails, AddCourseInfrastructure().",
+      "title": "Worker: ContentUploaded consumer, processing flow, publishes ContentProcessingCompleted/Failed",
+      "spec": "Implement Worker Program.cs as a generic host running MassTransit. Add ContentUploadedConsumer per contracts.md section 7: idempotent (skip if Status != Uploaded), flips Status Uploaded->Processing->Ready, calls IVideoProcessor (stub), generates SAS download URI for HLS manifest with 60 min TTL via IContentStorageService.GetDownloadUriAsync, publishes ContentProcessingCompleted via outbox. On exception publishes ContentProcessingFailed and sets Status=Failed. UseMessageRetry intervals 1s,5s,30s. Reuse AddContentInfrastructure.",
       "files": [
-        "src/services/LMS.CourseService/LMS.CourseService.Api/Program.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Api/Endpoints/",
-        "src/services/LMS.CourseService/LMS.CourseService.Api/Validators/",
-        "src/services/LMS.CourseService/LMS.CourseService.Api/Tenancy/HeaderTenantContext.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Api/Tenancy/TenantHeaderMiddleware.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Api/Authorization/AuthorizationHelpers.cs",
-        "src/services/LMS.CourseService/LMS.CourseService.Api/Errors/PaymentRequiredProblem.cs"
+        "src/services/LMS.ContentService/LMS.ContentService.Worker/Program.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Worker/Consumers/ContentUploadedConsumer.cs",
+        "src/services/LMS.ContentService/LMS.ContentService.Worker/Consumers/ContentUploadedConsumerDefinition.cs"
       ],
       "depends_on": ["T4"],
-      "branch": "feature/courseservice-T6-api",
-      "worktree": ".claude-worktrees/T6-courseservice-api",
-      "timeout_minutes": 75,
-      "acceptance": ["dotnet build src/services/LMS.CourseService/LMS.CourseService.Api/LMS.CourseService.Api.csproj"]
+      "branch": "feature/contentservice-T6-worker",
+      "worktree": ".claude-worktrees/T6-contentservice-worker",
+      "timeout_minutes": 45,
+      "acceptance": ["dotnet build src/services/LMS.ContentService/LMS.ContentService.Worker/LMS.ContentService.Worker.csproj"]
     },
     {
       "id": "T7",
       "agent": "gateway-ops",
-      "title": "Aspire AppHost + Gateway YARP wiring for /api/courses/**",
-      "spec": "Apply the AppHost diff in contracts.md section 7 (uncomment courseDb, add courseMigrator, course, gateway.WithReference(course)). Add YARP route + cluster in Gateway appsettings.json so /api/courses/{**catch-all} forwards to the courses resource, with header-forwarding transform applied. Health endpoint check.",
+      "title": "Aspire AppHost: register MongoDB lms-content, Azure Storage (Azurite emulator) + content-blobs, content Api, content Worker",
+      "spec": "Apply AppHost diff in contracts.md section 8: ensure contentDb is registered as 'lms-content'. Add Azure Storage resource via builder.AddAzureStorage(\"storage\").RunAsEmulator() (uses Azurite in dev). Add storage.AddBlobs(\"content-blobs\"). Register content Api with port 5103, .WithReference(contentDb).WithReference(rabbitmq).WithReference(contentBlobs).WaitFor(contentDb).WaitFor(contentBlobs).WaitFor(rabbitmq). Register content-worker with same references. gateway.WithReference(content). Add NuGet package Aspire.Hosting.Azure to LMS.AppHost.csproj. Verify gateway appsettings.json already routes /api/content/{**rest} to 'content' cluster — confirm in spec output. If gateway has a tight MaxRequestBodySize, raise it to accommodate large multipart uploads (≤ 5 GiB).",
       "files": [
         "src/LMS.AppHost/Program.cs",
-        "src/LMS.AppHost/LMS.AppHost.csproj",
-        "src/gateway/LMS.Gateway/appsettings.json",
-        "src/gateway/LMS.Gateway/appsettings.Development.json"
+        "src/LMS.AppHost/LMS.AppHost.csproj"
       ],
       "depends_on": ["T5", "T6"],
-      "branch": "feature/courseservice-T7-apphost",
-      "worktree": ".claude-worktrees/T7-courseservice-apphost",
+      "branch": "feature/contentservice-T7-apphost",
+      "worktree": ".claude-worktrees/T7-contentservice-apphost",
       "timeout_minutes": 25,
       "acceptance": ["dotnet build src/LMS.AppHost/LMS.AppHost.csproj"]
     },
@@ -142,55 +138,65 @@
       "id": "T8",
       "agent": "tester",
       "title": "Integration + unit + architecture + contract tests",
-      "spec": "Write tests per contracts.md section 9. Use xunit-integration skill: WebApplicationFactory + Testcontainers Postgres + MassTransit test harness. Tenant isolation pair on /api/courses. Payment gate test (publish IsFree=false -> 409 PAYMENT_REQUIRED). CoursePublished publish-on-success test. Consumer tests: ContentProcessingCompleted updates duration; UserEnrolled increments EnrollmentCount idempotently. Architecture test: every entity in CourseDomain inherits TenantEntity; CourseDbContext has global filter on TenantId. Contract test for CoursePublished record shape.",
+      "spec": "Per contracts.md section 10. Use xunit-integration skill: WebApplicationFactory + Testcontainers (Mongo + Azurite via mcr.microsoft.com/azure-storage/azurite + RabbitMQ) + MassTransit test harness. Tenant isolation pair on /api/content/{id}. Multipart upload to POST /api/content/uploads persists blob under {tenantId}/{contentItemId}/original/{filename} and returns 201. Upload publishes ContentUploaded. Worker consumer test (consume ContentUploaded -> publishes ContentProcessingCompleted). Playback 409 when not Ready, 200 with SAS Uri when Ready. Soft delete -> 404. Architecture: every Domain document implements ITenantDocument; every IContentItemRepository method has Guid tenantId param. Contract tests for ContentUploaded, ContentProcessingCompleted, ContentProcessingFailed shapes.",
       "files": [
-        "tests/LMS.IntegrationTests/CourseService/",
-        "tests/LMS.ContractTests/Course/CoursePublishedContractTests.cs",
-        "tests/LMS.ArchitectureTests/CourseServiceArchitectureTests.cs"
+        "tests/LMS.IntegrationTests/ContentService/",
+        "tests/LMS.ContractTests/Content/",
+        "tests/LMS.ArchitectureTests/ContentServiceArchitectureTests.cs"
       ],
       "depends_on": ["T6", "T7"],
-      "branch": "feature/courseservice-T8-tests",
-      "worktree": ".claude-worktrees/T8-courseservice-tests",
-      "timeout_minutes": 75,
+      "branch": "feature/contentservice-T8-tests",
+      "worktree": ".claude-worktrees/T8-contentservice-tests",
+      "timeout_minutes": 90,
       "acceptance": [
-        "dotnet test tests/LMS.IntegrationTests --filter FullyQualifiedName~CourseService",
-        "dotnet test tests/LMS.ContractTests --filter FullyQualifiedName~Course",
-        "dotnet test tests/LMS.ArchitectureTests --filter FullyQualifiedName~CourseService"
+        "dotnet test tests/LMS.IntegrationTests --filter FullyQualifiedName~ContentService",
+        "dotnet test tests/LMS.ContractTests --filter FullyQualifiedName~Content",
+        "dotnet test tests/LMS.ArchitectureTests --filter FullyQualifiedName~ContentService"
       ]
     },
     {
       "id": "T9",
       "agent": "security-auditor",
-      "title": "Tenant isolation + auth audit",
-      "spec": "Run the tenant-isolation skill across CourseService. Verify: (a) every read uses the global query filter AND has explicit TenantId predicate in repos; (b) no endpoint trusts a body-supplied TenantId; (c) consumers honour message TenantId; (d) no JWT validation downstream — only X-* headers; (e) public catalogue endpoints don't leak Draft courses or cross-tenant rows; (f) payment gate cannot be bypassed.",
-      "files": ["src/services/LMS.CourseService/"],
+      "title": "Tenant isolation + auth + storage-key audit",
+      "spec": "Run tenant-isolation skill against ContentService (Mongo variant — no global filter; verify every repo call has explicit tenantId predicate). Verify (a) no endpoint trusts a body-supplied TenantId; (b) SAS URIs never expose cross-tenant blob paths; (c) StorageKeyBuilder rejects paths outside the caller's tenant prefix; (d) consumers honour message TenantId; (e) no JWT validation downstream — only X-* headers; (f) Azure Blob container created with private access (no anonymous read); (g) SAS TTL bounded (≤ 60 min) and Read-only permissions; (h) multipart upload size limits enforced before bytes hit Blob Storage.",
+      "files": ["src/services/LMS.ContentService/"],
       "depends_on": ["T8"],
-      "branch": "feature/courseservice-T9-secaudit",
-      "worktree": ".claude-worktrees/T9-courseservice-secaudit",
+      "branch": "feature/contentservice-T9-secaudit",
+      "worktree": ".claude-worktrees/T9-contentservice-secaudit",
       "timeout_minutes": 30,
       "acceptance": ["audit report with zero high-severity findings"]
     },
     {
       "id": "T10",
       "agent": "reviewer",
-      "title": "Code review against contracts + absolute rules",
-      "spec": "Use code-reviewer skill. Cross-check every entity field, event shape, endpoint path, and DTO against .claude/contracts.md. Verify all LMS absolute backend rules. Verify 4-project layout matches IdentityService.",
-      "files": ["src/services/LMS.CourseService/", "src/LMS.Contracts/Course/", "src/LMS.AppHost/Program.cs"],
+      "title": "Code review against contracts + LMS absolute rules",
+      "spec": "Use code-reviewer skill. Cross-check every document field, event shape, endpoint path, DTO, and AppHost wiring against .claude/contracts.md. Verify Mongo-equivalent tenant safety pattern. Verify 4-project layout. Verify no direct HTTP between services. Verify ILlmClient not bypassed (n/a here). Verify event records in LMS.Contracts only. Verify Azure Blob client is injected via Aspire.Azure.Storage.Blobs (not constructed manually with raw connection strings).",
+      "files": [
+        "src/services/LMS.ContentService/",
+        "src/LMS.Contracts/Content/",
+        "src/LMS.AppHost/Program.cs"
+      ],
       "depends_on": ["T8", "T9"],
-      "branch": "feature/courseservice-T10-review",
-      "worktree": ".claude-worktrees/T10-courseservice-review",
+      "branch": "feature/contentservice-T10-review",
+      "worktree": ".claude-worktrees/T10-contentservice-review",
       "timeout_minutes": 30,
       "acceptance": ["review report with all violations resolved or explicitly waived"]
     },
     {
       "id": "T11",
       "agent": "docs-writer",
-      "title": "Sync docs/services/course.md, docs/events.md, docs/architecture.md, README",
-      "spec": "Update docs/services/course.md with shipped endpoints, payment gate, publish flow, consumed events. Update docs/events.md to add EventId to CoursePublished record. Add a paragraph to docs/architecture.md noting CourseService is now wired into AppHost on port 5102. Update README service checklist.",
-      "files": ["docs/services/course.md", "docs/events.md", "docs/architecture.md", "README.md"],
+      "title": "Author docs/services/content.md, sync entities.md + events.md + architecture.md + README",
+      "spec": "Create docs/services/content.md with shipped endpoints, Azure Blob conventions ({tenantId}/{contentItemId}/... paths, Azurite in dev), Worker flow, consumed/published events. Update docs/entities.md ContentService section to match locked ContentDocument/ContentItem shape (Id Guid surrogate, StorageContainer + StorageKey replacing S3Key, ContentStatus values). Update docs/events.md to add EventId to ContentProcessingCompleted, add ContentUploaded and ContentProcessingFailed records. Note ContentService is now wired into AppHost on port 5103 with Azure Blob Storage (Azurite emulator). Update README service checklist to mark ContentService done.",
+      "files": [
+        "docs/services/content.md",
+        "docs/entities.md",
+        "docs/events.md",
+        "docs/architecture.md",
+        "README.md"
+      ],
       "depends_on": ["T10"],
-      "branch": "feature/courseservice-T11-docs",
-      "worktree": ".claude-worktrees/T11-courseservice-docs",
+      "branch": "feature/contentservice-T11-docs",
+      "worktree": ".claude-worktrees/T11-contentservice-docs",
       "timeout_minutes": 25,
       "acceptance": ["markdown lints pass"]
     }
