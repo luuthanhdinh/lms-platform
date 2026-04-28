@@ -108,8 +108,9 @@ public record CourseLocalePublished(
 
 // ── Assessment ────────────────────────────────────────────────────────
 public record AssessmentSubmitted(
-    Guid UserId, Guid AssessmentId, Guid CourseId, Guid TenantId,
-    float Score, bool Passed, DateTimeOffset OccurredAt);
+    Guid EventId, Guid TenantId, Guid AssessmentId, Guid AttemptId,
+    Guid UserId, Guid CourseId, Guid? LessonId,
+    int Score, bool Passed, DateTimeOffset OccurredAt);
 
 public record EssaySubmitted(
     Guid UserId, Guid SubmissionId, Guid AssessmentId,
@@ -267,7 +268,7 @@ public record LabSessionTerminated(
 | `ContentUploaded` | ContentService.Api | ContentService.Worker (trigger processing pipeline) |
 | `ContentProcessingCompleted` | ContentService.Worker | CourseService (update lesson duration), NotificationWorker (instructor notice) |
 | `ContentProcessingFailed` | ContentService.Worker | NotificationWorker (alert instructor) |
-| `AssessmentSubmitted` | AssessmentService | ProgressService, GamificationService* |
+| `AssessmentSubmitted` | AssessmentService | ProgressService (lesson-quiz-pass → lesson complete), NotificationWorker (result email), GamificationService* |
 | `CredentialIssued` | CertificateService | NotificationWorker |
 
 *GamificationService is Phase 2 — NotificationWorker stubs the XP award in Phase 1.

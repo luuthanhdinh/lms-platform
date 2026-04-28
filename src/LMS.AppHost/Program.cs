@@ -94,6 +94,21 @@ var progress = builder.AddProject<Projects.LMS_ProgressService_Api>("progress")
 
 gateway.WithReference(progress);
 
+// AssessmentService
+var assessmentDb = postgres.AddDatabase("lms-assessment");
+
+var assessmentMigrator = builder.AddProject<Projects.LMS_AssessmentService_Migrator>("assessment-migrator")
+    .WithReference(assessmentDb)
+    .WaitFor(assessmentDb);
+
+var assessment = builder.AddProject<Projects.LMS_AssessmentService_Api>("assessment")
+    .WithReference(assessmentDb)
+    .WithReference(rabbitmq)
+    .WithReference(redis)
+    .WaitForCompletion(assessmentMigrator);
+
+gateway.WithReference(assessment);
+
 // Services — uncomment as each service project is scaffolded
 
 // builder.AddProject<Projects.LMS_CourseService>("courses")

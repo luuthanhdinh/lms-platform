@@ -33,6 +33,12 @@
     <Project Path="src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/LMS.ProgressService.Infrastructure.csproj" />
     <Project Path="src/services/LMS.ProgressService/LMS.ProgressService.Migrator/LMS.ProgressService.Migrator.csproj" />
   </Folder>
+  <Folder Name="/src/services/LMS.AssessmentService/">
+    <Project Path="src/services/LMS.AssessmentService/LMS.AssessmentService.Api/LMS.AssessmentService.Api.csproj" />
+    <Project Path="src/services/LMS.AssessmentService/LMS.AssessmentService.Domain/LMS.AssessmentService.Domain.csproj" />
+    <Project Path="src/services/LMS.AssessmentService/LMS.AssessmentService.Infrastructure/LMS.AssessmentService.Infrastructure.csproj" />
+    <Project Path="src/services/LMS.AssessmentService/LMS.AssessmentService.Migrator/LMS.AssessmentService.Migrator.csproj" />
+  </Folder>
   <Folder Name="/src/services/LMS.IdentityService/">
     <Project Path="src/services/LMS.IdentityService/LMS.IdentityService.Api/LMS.IdentityService.Api.csproj" />
     <Project Path="src/services/LMS.IdentityService/LMS.IdentityService.Domain/LMS.IdentityService.Domain.csproj" />
