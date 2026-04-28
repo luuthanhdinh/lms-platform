@@ -107,10 +107,9 @@ public record CourseLocalePublished(
     DateTimeOffset OccurredAt);
 
 // ── Assessment ────────────────────────────────────────────────────────
-public record AssessmentSubmitted(
-    Guid EventId, Guid TenantId, Guid AssessmentId, Guid AttemptId,
-    Guid UserId, Guid CourseId, Guid? LessonId,
-    int Score, bool Passed, DateTimeOffset OccurredAt);
+public sealed record AssessmentSubmitted(
+    Guid UserId, Guid AssessmentId, Guid CourseId, Guid TenantId,
+    int Score, bool Passed, DateTimeOffset OccurredAt);  // no EventId; dedupe key: (UserId, AssessmentId, OccurredAt)
 
 public record EssaySubmitted(
     Guid UserId, Guid SubmissionId, Guid AssessmentId,
