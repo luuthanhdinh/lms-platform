@@ -16,6 +16,7 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.*" />
     <PackageReference Include="MassTransit.TestFramework" Version="8.*" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.*" />
+    <PackageReference Include="Testcontainers.Redis" Version="4.*" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\gateway\LMS.Gateway\LMS.Gateway.csproj" />
@@ -30,5 +31,8 @@
     <ProjectReference Include="..\..\src\services\LMS.ProgressService\LMS.ProgressService.Api\LMS.ProgressService.Api.csproj" />
     <ProjectReference Include="..\..\src\services\LMS.ProgressService\LMS.ProgressService.Domain\LMS.ProgressService.Domain.csproj" />
     <ProjectReference Include="..\..\src\services\LMS.ProgressService\LMS.ProgressService.Infrastructure\LMS.ProgressService.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\services\LMS.AssessmentService\LMS.AssessmentService.Api\LMS.AssessmentService.Api.csproj" />
+    <ProjectReference Include="..\..\src\services\LMS.AssessmentService\LMS.AssessmentService.Domain\LMS.AssessmentService.Domain.csproj" />
+    <ProjectReference Include="..\..\src\services\LMS.AssessmentService\LMS.AssessmentService.Infrastructure\LMS.AssessmentService.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
