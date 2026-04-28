@@ -9,19 +9,19 @@
       "title": "Scaffold Vite + React 19 + TS project, deps, Tailwind v4, shadcn init",
       "spec": "Create `frontend/` at repo root via `npm create vite@latest frontend -- --template react-ts`. Install deps per contracts.md §1: react@19, @tanstack/react-query@5, @tanstack/react-router@1, keycloak-js@25, axios, zustand@5, react-hook-form, @hookform/resolvers, zod, tailwindcss@4, @tailwindcss/vite, lucide-react. Dev: vitest, @testing-library/react, eslint, prettier. Configure `vite.config.ts` with @vitejs/plugin-react + @tailwindcss/vite + alias `@`→./src and port 5173. Configure tsconfig path alias. Init shadcn (`npx shadcn@latest init`). Copy `silent-check-sso.html` template into `public/`. Create `frontend/.env.example` with the four VITE_* vars from contracts.md §8. Append `frontend/node_modules/`, `frontend/.env.local`, `frontend/dist/` to repo `.gitignore`. Replace stub `App.tsx` with empty placeholder; do NOT wire routes yet.",
       "files": [
-        "frontend/package.json",
-        "frontend/vite.config.ts",
-        "frontend/tsconfig.json",
-        "frontend/tsconfig.app.json",
-        "frontend/tsconfig.node.json",
-        "frontend/index.html",
-        "frontend/postcss.config.js",
-        "frontend/tailwind.config.ts",
-        "frontend/components.json",
-        "frontend/.env.example",
-        "frontend/public/silent-check-sso.html",
-        "frontend/src/styles/globals.css",
-        "frontend/src/App.tsx",
+        "src/frontend/package.json",
+        "src/frontend/vite.config.ts",
+        "src/frontend/tsconfig.json",
+        "src/frontend/tsconfig.app.json",
+        "src/frontend/tsconfig.node.json",
+        "src/frontend/index.html",
+        "src/frontend/postcss.config.js",
+        "src/frontend/tailwind.config.ts",
+        "src/frontend/components.json",
+        "src/frontend/.env.example",
+        "src/frontend/public/silent-check-sso.html",
+        "src/frontend/src/styles/globals.css",
+        "src/frontend/src/App.tsx",
         ".gitignore"
       ],
       "depends_on": [],
@@ -29,9 +29,9 @@
       "worktree": ".claude-worktrees/T1-fe-scaffold",
       "timeout_minutes": 40,
       "acceptance": [
-        "cd frontend && npm install --no-audit --no-fund",
-        "cd frontend && npx tsc --noEmit",
-        "cd frontend && npm run build"
+        "cd src/frontend && npm install --no-audit --no-fund",
+        "cd src/frontend && npx tsc --noEmit",
+        "cd src/frontend && npm run build"
       ]
     },
     {
@@ -40,18 +40,18 @@
       "title": "Core lib: keycloak singleton + apiClient + publicApiClient + queryClient + env",
       "spec": "Per contracts.md §2 and §6. Create `src/lib/env.ts` typing the four VITE_* vars. Create `src/lib/keycloak.ts` exporting Keycloak singleton. Create `src/lib/api-client.ts` exporting BOTH `apiClient` (with request interceptor that calls `keycloak.updateToken(30)` then attaches Bearer; response interceptor: 401 → `keycloak.login()`) AND `publicApiClient` (no interceptors). Create `src/lib/query-client.ts` exporting a `QueryClient` with `staleTime: 60_000`, `retry: 1`. Create `src/types/index.ts` with the verbatim type set from docs/frontend.md plus contracts.md §4 additions (ErrorResponse, SessionStartedDto, AnswerDto, AssessmentResultDto, AttemptSummaryDto, CertificateSummary, CertificateDetail, VerificationResult). NO React components in this task.",
       "files": [
-        "frontend/src/lib/env.ts",
-        "frontend/src/lib/keycloak.ts",
-        "frontend/src/lib/api-client.ts",
-        "frontend/src/lib/query-client.ts",
-        "frontend/src/types/index.ts"
+        "src/frontend/src/lib/env.ts",
+        "src/frontend/src/lib/keycloak.ts",
+        "src/frontend/src/lib/api-client.ts",
+        "src/frontend/src/lib/query-client.ts",
+        "src/frontend/src/types/index.ts"
       ],
       "depends_on": ["T1"],
       "branch": "feature/fe-T2-core-lib",
       "worktree": ".claude-worktrees/T2-fe-core-lib",
       "timeout_minutes": 40,
       "acceptance": [
-        "cd frontend && npx tsc --noEmit"
+        "cd src/frontend && npx tsc --noEmit"
       ]
     },
     {
@@ -60,19 +60,19 @@
       "title": "Auth slice: useAuth, useCurrentUser, ProtectedRoute, main.tsx Keycloak.init",
       "spec": "Per contracts.md §2. Implement `features/auth/hooks/useAuth.ts` (returns the locked shape — isAuthenticated, token, userId, tenantId, roles, hasRole, login, logout). Implement `features/auth/hooks/useCurrentUser.ts` (queries `/api/identity/me` with apiClient — returns profile DTO; key `['identity','me']`). Implement `features/auth/components/ProtectedRoute.tsx` per locked behavior (unauth → login; missing role → AccessDenied; else children). Implement `components/feedback/AccessDenied.tsx`. Implement `src/app/main.tsx` to call `keycloak.init({ onLoad:'check-sso', silentCheckSsoRedirectUri: origin+'/silent-check-sso.html', pkceMethod:'S256' })` then `ReactDOM.createRoot` rendering `<Providers>`. Implement `src/app/providers.tsx` wrapping `QueryClientProvider` + `RouterProvider` (router placeholder import — actual tree comes in T4). Bind `keycloak.onTokenExpired` to refresh.",
       "files": [
-        "frontend/src/features/auth/hooks/useAuth.ts",
-        "frontend/src/features/auth/hooks/useCurrentUser.ts",
-        "frontend/src/features/auth/components/ProtectedRoute.tsx",
-        "frontend/src/components/feedback/AccessDenied.tsx",
-        "frontend/src/app/main.tsx",
-        "frontend/src/app/providers.tsx"
+        "src/frontend/src/features/auth/hooks/useAuth.ts",
+        "src/frontend/src/features/auth/hooks/useCurrentUser.ts",
+        "src/frontend/src/features/auth/components/ProtectedRoute.tsx",
+        "src/frontend/src/components/feedback/AccessDenied.tsx",
+        "src/frontend/src/app/main.tsx",
+        "src/frontend/src/app/providers.tsx"
       ],
       "depends_on": ["T2"],
       "branch": "feature/fe-T3-auth",
       "worktree": ".claude-worktrees/T3-fe-auth",
       "timeout_minutes": 50,
       "acceptance": [
-        "cd frontend && npx tsc --noEmit"
+        "cd src/frontend && npx tsc --noEmit"
       ]
     },
     {
@@ -80,36 +80,35 @@
       "agent": "frontend",
       "title": "Router tree, RootLayout shell, base layout components, shadcn primitives",
       "spec": "Per contracts.md §3. Create `src/app/router.tsx` with declarative TanStack Router tree (rootRoute + children for every path in §3 — components imported lazily where pages don't exist yet, use placeholder components for not-yet-built pages). Create `src/app/RootLayout.tsx` (Header + main `<Outlet/>` + footer). Create `components/layout/{Header,NavBar,UserMenu}.tsx` (UserMenu calls `useAuth().logout`). Create `components/layout/ui-store.ts` (Zustand: sidebarOpen, theme, toast queue per contracts.md §5). Create `components/feedback/{Skeleton,ErrorBanner,EmptyState}.tsx`. Add shadcn primitives by running `npx shadcn@latest add button card input label dialog dropdown-menu select tabs toast skeleton progress badge`. NO feature pages yet — placeholder pages for catalogue/dashboard/etc.",
-      "files": [
-        "frontend/src/app/router.tsx",
-        "frontend/src/app/RootLayout.tsx",
-        "frontend/src/components/layout/Header.tsx",
-        "frontend/src/components/layout/NavBar.tsx",
-        "frontend/src/components/layout/UserMenu.tsx",
-        "frontend/src/components/layout/ui-store.ts",
-        "frontend/src/components/feedback/Skeleton.tsx",
-        "frontend/src/components/feedback/ErrorBanner.tsx",
-        "frontend/src/components/feedback/EmptyState.tsx",
-        "frontend/src/components/ui/button.tsx",
-        "frontend/src/components/ui/card.tsx",
-        "frontend/src/components/ui/input.tsx",
-        "frontend/src/components/ui/label.tsx",
-        "frontend/src/components/ui/dialog.tsx",
-        "frontend/src/components/ui/dropdown-menu.tsx",
-        "frontend/src/components/ui/select.tsx",
-        "frontend/src/components/ui/tabs.tsx",
-        "frontend/src/components/ui/toast.tsx",
-        "frontend/src/components/ui/skeleton.tsx",
-        "frontend/src/components/ui/progress.tsx",
-        "frontend/src/components/ui/badge.tsx"
+      "files": ["src/frontend/src/app/router.tsx",
+        "src/frontend/src/app/RootLayout.tsx",
+        "src/frontend/src/components/layout/Header.tsx",
+        "src/frontend/src/components/layout/NavBar.tsx",
+        "src/frontend/src/components/layout/UserMenu.tsx",
+        "src/frontend/src/components/layout/ui-store.ts",
+        "src/frontend/src/components/feedback/Skeleton.tsx",
+        "src/frontend/src/components/feedback/ErrorBanner.tsx",
+        "src/frontend/src/components/feedback/EmptyState.tsx",
+        "src/frontend/src/components/ui/button.tsx",
+        "src/frontend/src/components/ui/card.tsx",
+        "src/frontend/src/components/ui/input.tsx",
+        "src/frontend/src/components/ui/label.tsx",
+        "src/frontend/src/components/ui/dialog.tsx",
+        "src/frontend/src/components/ui/dropdown-menu.tsx",
+        "src/frontend/src/components/ui/select.tsx",
+        "src/frontend/src/components/ui/tabs.tsx",
+        "src/frontend/src/components/ui/toast.tsx",
+        "src/frontend/src/components/ui/skeleton.tsx",
+        "src/frontend/src/components/ui/progress.tsx",
+        "src/frontend/src/components/ui/badge.tsx"
       ],
       "depends_on": ["T3"],
       "branch": "feature/fe-T4-router-shell",
       "worktree": ".claude-worktrees/T4-fe-router",
       "timeout_minutes": 60,
       "acceptance": [
-        "cd frontend && npx tsc --noEmit",
-        "cd frontend && npm run build"
+        "cd src/frontend && npx tsc --noEmit",
+        "cd src/frontend && npm run build"
       ]
     },
     {
@@ -118,23 +117,23 @@
       "title": "Feature: courses (hooks + catalogue + detail + editor + create form)",
       "spec": "Per contracts.md §4. Implement `features/courses/api/use-courses.ts` exposing courseKeys + useCourses + useCourse + useCourseSyllabus + useCreateCourse + useUpdateCourse + usePublishCourse with mutation-success invalidations as documented. Implement components: CourseCard, CourseSyllabus, CreateCourseForm (React Hook Form + Zod schema from docs/frontend.md), PublishButton. Implement pages: CataloguePage (paginated grid), CourseDetailPage (header + syllabus + EnrollButton placeholder slot), CourseEditorPage (instructor — wraps CreateCourseForm in edit mode). Wire into router (replace placeholders in T4 router tree).",
       "files": [
-        "frontend/src/features/courses/api/use-courses.ts",
-        "frontend/src/features/courses/components/CourseCard.tsx",
-        "frontend/src/features/courses/components/CourseSyllabus.tsx",
-        "frontend/src/features/courses/components/CreateCourseForm.tsx",
-        "frontend/src/features/courses/components/PublishButton.tsx",
-        "frontend/src/features/courses/pages/CataloguePage.tsx",
-        "frontend/src/features/courses/pages/CourseDetailPage.tsx",
-        "frontend/src/features/courses/pages/CourseEditorPage.tsx",
-        "frontend/src/features/courses/pages/InstructorCoursesPage.tsx",
-        "frontend/src/app/router.tsx"
+        "src/frontend/src/features/courses/api/use-courses.ts",
+        "src/frontend/src/features/courses/components/CourseCard.tsx",
+        "src/frontend/src/features/courses/components/CourseSyllabus.tsx",
+        "src/frontend/src/features/courses/components/CreateCourseForm.tsx",
+        "src/frontend/src/features/courses/components/PublishButton.tsx",
+        "src/frontend/src/features/courses/pages/CataloguePage.tsx",
+        "src/frontend/src/features/courses/pages/CourseDetailPage.tsx",
+        "src/frontend/src/features/courses/pages/CourseEditorPage.tsx",
+        "src/frontend/src/features/courses/pages/InstructorCoursesPage.tsx"
+        
       ],
       "depends_on": ["T4"],
       "branch": "feature/fe-T5-courses",
       "worktree": ".claude-worktrees/T5-fe-courses",
       "timeout_minutes": 70,
       "acceptance": [
-        "cd frontend && npx tsc --noEmit"
+        "cd src/frontend && npx tsc --noEmit"
       ]
     },
     {
@@ -143,20 +142,20 @@
       "title": "Feature: enrollment + progress (hooks + EnrollButton + MyCoursesPage + DashboardPage)",
       "spec": "Per contracts.md §4. Implement `features/enrollment/api/use-enrollments.ts` (useMyEnrollments, useEnroll, useCancelEnrollment). EnrollButton.tsx: on 409 PAYMENT_REQUIRED, show shadcn dialog 'Payment required (Phase 2)'; on 201 navigate to course detail. MyCoursesPage.tsx: lists enrollments joined with progress. Implement `features/progress/api/use-progress.ts` (useMyProgress, useCourseProgress, useCompleteLesson; useCompleteLesson onSuccess invalidates progress + enrollment keys). ProgressBar.tsx component (uses shadcn Progress). DashboardPage.tsx: dashboard combining MyCoursesPage + recent activity (uses both hooks). Hook into router replacing placeholders.",
       "files": [
-        "frontend/src/features/enrollment/api/use-enrollments.ts",
-        "frontend/src/features/enrollment/components/EnrollButton.tsx",
-        "frontend/src/features/enrollment/pages/MyCoursesPage.tsx",
-        "frontend/src/features/progress/api/use-progress.ts",
-        "frontend/src/features/progress/components/ProgressBar.tsx",
-        "frontend/src/features/dashboard/pages/DashboardPage.tsx",
-        "frontend/src/app/router.tsx"
+        "src/frontend/src/features/enrollment/api/use-enrollments.ts",
+        "src/frontend/src/features/enrollment/components/EnrollButton.tsx",
+        "src/frontend/src/features/enrollment/pages/MyCoursesPage.tsx",
+        "src/frontend/src/features/progress/api/use-progress.ts",
+        "src/frontend/src/features/progress/components/ProgressBar.tsx",
+        "src/frontend/src/features/dashboard/pages/DashboardPage.tsx"
+        
       ],
       "depends_on": ["T4"],
       "branch": "feature/fe-T6-enrollment-progress",
       "worktree": ".claude-worktrees/T6-fe-enroll",
       "timeout_minutes": 70,
       "acceptance": [
-        "cd frontend && npx tsc --noEmit"
+        "cd src/frontend && npx tsc --noEmit"
       ]
     },
     {
@@ -165,22 +164,22 @@
       "title": "Feature: content (hooks + VideoPlayer + PdfViewer + ScormPlayer + UploadDialog + LessonPage + player-store)",
       "spec": "Per contracts.md §4 + §5. Implement `features/content/api/use-content.ts` (useContentStream, useReportContentProgress, useUploadContent — three-step upload: init → S3 PUT → process). Implement player-store.ts Zustand (currentLessonId, isPlaying, volume, playbackRate, lastReportedAt). VideoPlayer.tsx per docs/frontend.md (heartbeat 30s via useReportContentProgress; honors resumePositionSeconds). PdfViewer.tsx (native iframe to signed URL — see Open Decision #5). ScormPlayer.tsx per docs/frontend.md sandbox+postMessage bridge calling useCompleteLesson on `cmi.core.lesson_status=passed|completed`. UploadDialog.tsx (instructor) using useUploadContent + RHF + Zod (file required, contentType enum, lessonId required). LessonPage.tsx switches player by contentType. ContentUploadPage.tsx wraps UploadDialog. Wire router.",
       "files": [
-        "frontend/src/features/content/api/use-content.ts",
-        "frontend/src/features/content/store/player-store.ts",
-        "frontend/src/features/content/components/VideoPlayer.tsx",
-        "frontend/src/features/content/components/PdfViewer.tsx",
-        "frontend/src/features/content/components/ScormPlayer.tsx",
-        "frontend/src/features/content/components/UploadDialog.tsx",
-        "frontend/src/features/content/pages/LessonPage.tsx",
-        "frontend/src/features/content/pages/ContentUploadPage.tsx",
-        "frontend/src/app/router.tsx"
+        "src/frontend/src/features/content/api/use-content.ts",
+        "src/frontend/src/features/content/store/player-store.ts",
+        "src/frontend/src/features/content/components/VideoPlayer.tsx",
+        "src/frontend/src/features/content/components/PdfViewer.tsx",
+        "src/frontend/src/features/content/components/ScormPlayer.tsx",
+        "src/frontend/src/features/content/components/UploadDialog.tsx",
+        "src/frontend/src/features/content/pages/LessonPage.tsx",
+        "src/frontend/src/features/content/pages/ContentUploadPage.tsx"
+        
       ],
       "depends_on": ["T4", "T6"],
       "branch": "feature/fe-T7-content",
       "worktree": ".claude-worktrees/T7-fe-content",
       "timeout_minutes": 80,
       "acceptance": [
-        "cd frontend && npx tsc --noEmit"
+        "cd src/frontend && npx tsc --noEmit"
       ]
     },
     {
@@ -189,20 +188,20 @@
       "title": "Feature: assessment (hooks + QuizRunner + QuestionCard + ResultPanel + QuizPage + quiz-store)",
       "spec": "Per contracts.md §4 + §5. Implement `features/assessment/api/use-assessments.ts` (useStartAssessmentSession, useSubmitAssessment, useMyAttempts). quiz-store.ts Zustand (sessionId, currentQuestionIndex, draftAnswers Record, startedAt, expiresAt; setAnswer, next, prev, reset). QuestionCard.tsx renders MCQ / multi-select / free-text per QuestionDto.type. QuizRunner.tsx orchestrates: fetch session via mutation onSubmit of useStartAssessmentSession, render QuestionCards stepper, on submit dispatch useSubmitAssessment with draftAnswers. ResultPanel.tsx shows AssessmentResultDto + retry CTA when `passed=false`. QuizPage.tsx wraps QuizRunner with ProtectedRoute. Wire router.",
       "files": [
-        "frontend/src/features/assessment/api/use-assessments.ts",
-        "frontend/src/features/assessment/store/quiz-store.ts",
-        "frontend/src/features/assessment/components/QuestionCard.tsx",
-        "frontend/src/features/assessment/components/QuizRunner.tsx",
-        "frontend/src/features/assessment/components/ResultPanel.tsx",
-        "frontend/src/features/assessment/pages/QuizPage.tsx",
-        "frontend/src/app/router.tsx"
+        "src/frontend/src/features/assessment/api/use-assessments.ts",
+        "src/frontend/src/features/assessment/store/quiz-store.ts",
+        "src/frontend/src/features/assessment/components/QuestionCard.tsx",
+        "src/frontend/src/features/assessment/components/QuizRunner.tsx",
+        "src/frontend/src/features/assessment/components/ResultPanel.tsx",
+        "src/frontend/src/features/assessment/pages/QuizPage.tsx"
+        
       ],
       "depends_on": ["T4"],
       "branch": "feature/fe-T8-assessment",
       "worktree": ".claude-worktrees/T8-fe-assessment",
       "timeout_minutes": 70,
       "acceptance": [
-        "cd frontend && npx tsc --noEmit"
+        "cd src/frontend && npx tsc --noEmit"
       ]
     },
     {
@@ -211,18 +210,18 @@
       "title": "Feature: certificate (hooks + CertificateCard + MyCertificates + public VerifyPage)",
       "spec": "Per contracts.md §4. Implement `features/certificate/api/use-certificates.ts` (useMyCertificates uses apiClient; useCertificate uses apiClient; useVerifyCertificate uses publicApiClient — no auth header). CertificateCard.tsx (issue date, course title, download PDF link, verify URL with copy button). MyCertificatesPage.tsx (auth required). VerifyPage.tsx (public; reads $code route param; shows valid/invalid + cert details). Wire router.",
       "files": [
-        "frontend/src/features/certificate/api/use-certificates.ts",
-        "frontend/src/features/certificate/components/CertificateCard.tsx",
-        "frontend/src/features/certificate/pages/MyCertificatesPage.tsx",
-        "frontend/src/features/certificate/pages/VerifyPage.tsx",
-        "frontend/src/app/router.tsx"
+        "src/frontend/src/features/certificate/api/use-certificates.ts",
+        "src/frontend/src/features/certificate/components/CertificateCard.tsx",
+        "src/frontend/src/features/certificate/pages/MyCertificatesPage.tsx",
+        "src/frontend/src/features/certificate/pages/VerifyPage.tsx"
+        
       ],
       "depends_on": ["T4"],
       "branch": "feature/fe-T9-certificate",
       "worktree": ".claude-worktrees/T9-fe-cert",
       "timeout_minutes": 50,
       "acceptance": [
-        "cd frontend && npx tsc --noEmit"
+        "cd src/frontend && npx tsc --noEmit"
       ]
     },
     {
@@ -231,19 +230,19 @@
       "title": "LandingPage + NotFoundPage + final router wiring + production build smoke",
       "spec": "Implement public LandingPage (hero + 'Browse courses' CTA → /courses) and NotFoundPage. Replace any remaining placeholder pages in router.tsx. Run `npm run build` and ensure dist/ produces with no errors. Run `npx tsc --noEmit`. Run `npm run lint` (configure ESLint flat config in T1; if missing, add minimal config here).",
       "files": [
-        "frontend/src/features/landing/pages/LandingPage.tsx",
-        "frontend/src/features/notfound/pages/NotFoundPage.tsx",
-        "frontend/src/app/router.tsx",
-        "frontend/eslint.config.js"
+        "src/frontend/src/app/router.tsx",
+        "src/frontend/src/features/landing/pages/LandingPage.tsx",
+        "src/frontend/src/features/notfound/pages/NotFoundPage.tsx",
+        "src/frontend/eslint.config.js"
       ],
       "depends_on": ["T5", "T6", "T7", "T8", "T9"],
       "branch": "feature/fe-T10-landing-build",
       "worktree": ".claude-worktrees/T10-fe-landing",
       "timeout_minutes": 40,
       "acceptance": [
-        "cd frontend && npx tsc --noEmit",
-        "cd frontend && npm run build",
-        "cd frontend && npm run lint"
+        "cd src/frontend && npx tsc --noEmit",
+        "cd src/frontend && npm run build",
+        "cd src/frontend && npm run lint"
       ]
     },
     {
@@ -272,25 +271,25 @@
       "title": "Vitest unit tests for apiClient, useAuth, ProtectedRoute, query hooks, Zod schemas",
       "spec": "Per contracts.md §9 unit list. Configure vitest in frontend/vite.config.ts (test env: jsdom). Add `frontend/tests/setup.ts`. Write tests: (1) apiClient interceptors — token attach + 401 redirect (mock keycloak module). (2) publicApiClient — no Authorization header attached. (3) useAuth shape (mock keycloak global). (4) ProtectedRoute — three branches. (5) For each feature hook (use-courses, use-enrollments, use-content, use-progress, use-assessments, use-certificates) one happy-path test verifying query key shape + URL called (use msw or axios-mock-adapter). (6) Zod schemas reject invalid + accept valid (CreateCourseForm, UploadDialog).",
       "files": [
-        "frontend/vite.config.ts",
-        "frontend/tests/setup.ts",
-        "frontend/src/lib/api-client.test.ts",
-        "frontend/src/features/auth/hooks/useAuth.test.ts",
-        "frontend/src/features/auth/components/ProtectedRoute.test.tsx",
-        "frontend/src/features/courses/api/use-courses.test.ts",
-        "frontend/src/features/enrollment/api/use-enrollments.test.ts",
-        "frontend/src/features/content/api/use-content.test.ts",
-        "frontend/src/features/progress/api/use-progress.test.ts",
-        "frontend/src/features/assessment/api/use-assessments.test.ts",
-        "frontend/src/features/certificate/api/use-certificates.test.ts",
-        "frontend/src/features/courses/components/CreateCourseForm.test.tsx"
+        "src/frontend/vite.config.ts",
+        "src/frontend/tests/setup.ts",
+        "src/frontend/src/lib/api-client.test.ts",
+        "src/frontend/src/features/auth/hooks/useAuth.test.ts",
+        "src/frontend/src/features/auth/components/ProtectedRoute.test.tsx",
+        "src/frontend/src/features/courses/api/use-courses.test.ts",
+        "src/frontend/src/features/enrollment/api/use-enrollments.test.ts",
+        "src/frontend/src/features/content/api/use-content.test.ts",
+        "src/frontend/src/features/progress/api/use-progress.test.ts",
+        "src/frontend/src/features/assessment/api/use-assessments.test.ts",
+        "src/frontend/src/features/certificate/api/use-certificates.test.ts",
+        "src/frontend/src/features/courses/components/CreateCourseForm.test.tsx"
       ],
       "depends_on": ["T10"],
       "branch": "feature/fe-T12-vitest",
       "worktree": ".claude-worktrees/T12-fe-vitest",
       "timeout_minutes": 60,
       "acceptance": [
-        "cd frontend && npx vitest run"
+        "cd src/frontend && npx vitest run"
       ]
     },
     {
@@ -299,21 +298,21 @@
       "title": "Architecture + component tests (axios uniqueness, no localStorage tokens, no inline style, RTL behavior)",
       "spec": "Per contracts.md §9 architecture + component lists. Architecture vitest tests under `frontend/tests/architecture/`: (a) only `src/lib/api-client.ts` contains `axios.create(`; grep all .ts/.tsx files. (b) no file under src/ writes to localStorage/sessionStorage with a token-shaped key (regex over file contents). (c) no `style={{` in src/**/*.tsx. (d) no `apiClient.(get|post|put|delete|patch)` outside `src/features/**/api/**` and `src/lib/**` (mutations may be invoked elsewhere via the hook return). Component tests (React Testing Library): CourseCard renders title + enroll CTA; EnrollButton handles 409 PAYMENT_REQUIRED branch (shows dialog); QuizRunner reads draftAnswers from Zustand; VideoPlayer fires heartbeat at 30s with vi.useFakeTimers; ProtectedRoute role-mismatch → AccessDenied.",
       "files": [
-        "frontend/tests/architecture/no-foreign-axios.test.ts",
-        "frontend/tests/architecture/no-localstorage-token.test.ts",
-        "frontend/tests/architecture/no-inline-style.test.ts",
-        "frontend/tests/architecture/api-call-locality.test.ts",
-        "frontend/src/features/courses/components/CourseCard.test.tsx",
-        "frontend/src/features/enrollment/components/EnrollButton.test.tsx",
-        "frontend/src/features/assessment/components/QuizRunner.test.tsx",
-        "frontend/src/features/content/components/VideoPlayer.test.tsx"
+        "src/frontend/tests/architecture/no-foreign-axios.test.ts",
+        "src/frontend/tests/architecture/no-localstorage-token.test.ts",
+        "src/frontend/tests/architecture/no-inline-style.test.ts",
+        "src/frontend/tests/architecture/api-call-locality.test.ts",
+        "src/frontend/src/features/courses/components/CourseCard.test.tsx",
+        "src/frontend/src/features/enrollment/components/EnrollButton.test.tsx",
+        "src/frontend/src/features/assessment/components/QuizRunner.test.tsx",
+        "src/frontend/src/features/content/components/VideoPlayer.test.tsx"
       ],
       "depends_on": ["T10"],
       "branch": "feature/fe-T13-arch-tests",
       "worktree": ".claude-worktrees/T13-fe-arch",
       "timeout_minutes": 60,
       "acceptance": [
-        "cd frontend && npx vitest run"
+        "cd src/frontend && npx vitest run"
       ]
     },
     {
@@ -342,7 +341,7 @@
       "timeout_minutes": 40,
       "acceptance": [
         "dotnet build LMS.slnx",
-        "cd frontend && npm run build && npx vitest run"
+        "cd src/frontend && npm run build && npx vitest run"
       ]
     },
     {

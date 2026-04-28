@@ -85,7 +85,7 @@ def spawn(task: dict, contracts_text: str, attempt: int) -> tuple:
             check=True,
         )
     log_path = wt / f"agent.attempt{attempt}.log"
-    log = log_path.open("w")
+    log_fh = log_path.open("w")
     proc = subprocess.Popen(
         [
             "claude",
@@ -94,9 +94,10 @@ def spawn(task: dict, contracts_text: str, attempt: int) -> tuple:
             "-p", build_prompt(task, contracts_text),
         ],
         cwd=str(wt),
-        stdout=log,
+        stdout=log_fh,
         stderr=subprocess.STDOUT,
     )
+    log_fh.close()
     deadline = time.time() + 60 * task.get("timeout_minutes", DEFAULT_TIMEOUT_MIN)
     return proc, deadline, log_path
 
@@ -186,6 +187,17 @@ def main() -> int:
                 print(f"[FAIL] {tid} (exit {ret}, log {info['log']})")
                 failed[tid] = f"exit-{ret}"
                 del running[tid]
+
+        if not running and not ready_tasks():
+            unresolvable = [
+                tid for tid, t in tasks.items()
+                if tid not in completed and tid not in failed and tid not in skipped
+            ]
+            if unresolvable:
+                print(f"[DEADLOCK] Tasks with unsatisfiable deps: {unresolvable}")
+                for tid in unresolvable:
+                    failed[tid] = "deadlock"
+                break
 
         time.sleep(3)
 

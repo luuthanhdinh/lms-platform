@@ -8,11 +8,11 @@ grep -rn "IgnoreQueryFilters" "$ROOT" --include="*.cs" \
   | grep -v "// tenant-bypass:" && { echo "  FAIL"; FAIL=1; }
 
 echo "[2/6] Raw SQL missing tenant_id..."
-grep -rEn "FromSqlRaw|ExecuteSqlRaw|ExecuteSqlInterpolated" "$ROOT" \
-  --include="*.cs" | while read -r line; do
+while read -r line; do
     echo "$line" | grep -qi "tenant_id\|@tenant" || \
       { echo "  CHECK: $line"; FAIL=1; }
-  done
+  done < <(grep -rEn "FromSqlRaw|ExecuteSqlRaw|ExecuteSqlInterpolated" "$ROOT" \
+  --include="*.cs")
 
 echo "[3/6] DTOs setting TenantId from request body..."
 grep -rEn "TenantId\s*=\s*(req|request|dto|input)\." "$ROOT" \
