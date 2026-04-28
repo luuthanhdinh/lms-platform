@@ -48,7 +48,7 @@ public class AssessmentDbContext : DbContext
 
             e.HasIndex(x => new { x.TenantId, x.CourseId });
             e.HasIndex(x => new { x.TenantId, x.LessonId })
-                .HasFilter("\"LessonId\" IS NOT NULL");
+                .HasFilter("lesson_id IS NOT NULL");
 
             e.HasMany(a => a.Questions)
                 .WithOne(q => q.Assessment)

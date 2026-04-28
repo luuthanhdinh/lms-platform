@@ -20,11 +20,16 @@ export function CataloguePage() {
     return <ErrorBanner />
   }
 
+  const courses = data?.items ?? []
+
   return (
     <div>
       <h1 className="mb-8 text-3xl font-bold text-foreground">Course Catalogue</h1>
+      {courses.length === 0 && (
+        <p className="text-muted-foreground">No courses available yet.</p>
+      )}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {data?.data.map(course => (
+        {courses.map(course => (
           <Link
             key={course.id}
             to="/courses/$courseId"

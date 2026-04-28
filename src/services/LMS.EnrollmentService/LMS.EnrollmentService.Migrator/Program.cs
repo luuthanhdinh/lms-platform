@@ -1,40 +1,33 @@
+using LMS.EnrollmentService.Domain.Abstractions;
 using LMS.EnrollmentService.Infrastructure.Data;
-using LMS.EnrollmentService.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 var builder = Host.CreateApplicationBuilder(args);
-builder.AddServiceDefaults();
-
-builder.Services.AddEnrollmentInfrastructure(builder.Configuration);
-
-builder.Services.AddHostedService<MigratorService>();
+builder.Services.AddSingleton<ITenantContext>(new MigrationTenantContext());
+builder.AddNpgsqlDataSource("lms-enrollments");
+builder.Services.AddDbContext<EnrollmentDbContext>((sp, o) =>
+    o.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>(),
+            b => b.MigrationsHistoryTable("__EFMigrationsHistory", "public")
+                  .MigrationsAssembly("LMS.EnrollmentService.Infrastructure"))
+     .UseSnakeCaseNamingConvention());
 
 var host = builder.Build();
-await host.RunAsync();
+await host.StartAsync();
 
-internal sealed class MigratorService(
-    IServiceScopeFactory scopeFactory,
-    IHostApplicationLifetime lifetime,
-    ILogger<MigratorService> logger) : BackgroundService
+using var scope = host.Services.CreateScope();
+var db = scope.ServiceProvider.GetRequiredService<EnrollmentDbContext>();
+var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+logger.LogInformation("Applying EnrollmentService migrations...");
+await db.Database.MigrateAsync();
+logger.LogInformation("Migrations applied successfully.");
+
+await host.StopAsync();
+
+internal sealed class MigrationTenantContext : ITenantContext
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        try
-        {
-            using var scope = scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<EnrollmentDbContext>();
-            logger.LogInformation("Applying EnrollmentService migrations...");
-            await db.Database.MigrateAsync(stoppingToken);
-            logger.LogInformation("Migrations applied successfully.");
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Migration failed.");
-            throw;
-        }
-        finally
-        {
-            lifetime.StopApplication();
-        }
-    }
+    public Guid TenantId => Guid.Empty;
+    public Guid UserId => Guid.Empty;
+    public string[] Roles => [];
 }

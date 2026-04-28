@@ -10,8 +10,8 @@ public static class CertificateEndpoints
 {
     public static IEndpointRouteBuilder MapCertificateEndpoints(this IEndpointRouteBuilder app)
     {
-        // GET /certificates/me — list current user's certificates, optional courseId filter
-        app.MapGet("/certificates/me", async (
+        // GET /api/certificates/me — list current user's certificates, optional courseId filter
+        app.MapGet("/api/certificates/me", async (
             HttpContext ctx,
             ICertificateRepository repo,
             Guid? courseId,
@@ -27,8 +27,8 @@ public static class CertificateEndpoints
             return Results.Ok(result.Select(MapToDto));
         });
 
-        // GET /certificates/{id}
-        app.MapGet("/certificates/{id:guid}", async (
+        // GET /api/certificates/{id}
+        app.MapGet("/api/certificates/{id:guid}", async (
             Guid id,
             HttpContext ctx,
             ICertificateRepository repo,
@@ -47,8 +47,8 @@ public static class CertificateEndpoints
             return Results.Ok(MapToDto(cert));
         });
 
-        // GET /certificates/{id}/pdf — stream PDF
-        app.MapGet("/certificates/{id:guid}/pdf", async (
+        // GET /api/certificates/{id}/pdf — stream PDF
+        app.MapGet("/api/certificates/{id:guid}/pdf", async (
             Guid id,
             HttpContext ctx,
             ICertificateRepository repo,
@@ -74,8 +74,8 @@ public static class CertificateEndpoints
             return Results.File(stream, "application/pdf", $"certificate-{cert.CertificateNumber}.pdf");
         });
 
-        // POST /certificates/{id}/revoke — Admin or Instructor only
-        app.MapPost("/certificates/{id:guid}/revoke", async (
+        // POST /api/certificates/{id}/revoke — Admin or Instructor only
+        app.MapPost("/api/certificates/{id:guid}/revoke", async (
             Guid id,
             [FromBody] RevokeCertificateRequest req,
             HttpContext ctx,

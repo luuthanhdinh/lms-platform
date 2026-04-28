@@ -20,7 +20,7 @@ export function InstructorCoursesPage() {
         </a>
       </div>
       <div className="space-y-4">
-        {data?.data.map(course => (
+        {(data?.items ?? []).map(course => (
           <div key={course.id} className="flex items-center justify-between rounded-lg border border-border p-4">
             <div>
               <h2 className="font-medium text-foreground">{course.title}</h2>

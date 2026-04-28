@@ -181,6 +181,21 @@ internal static class ProgressEndpoints
             return Results.Ok(items.Select(l => l.ToDto()).ToList());
         });
 
+        // GET /api/progress/me — all course progress for the current user
+        group.MapGet("/me", async (
+            ITenantContext ctx,
+            ICourseProgressRepository courseRepo,
+            CancellationToken ct) =>
+        {
+            if (ctx.TenantId == Guid.Empty)
+                return ResultExtensions.ProblemTenantRequired();
+            if (!AuthorizationHelpers.IsAuthenticated(ctx))
+                return ResultExtensions.ProblemUnauthorized();
+
+            var progress = await courseRepo.ListByUserAsync(ctx.TenantId, ctx.UserId, ct);
+            return Results.Ok(progress.Select(p => p.ToDto()).ToList());
+        });
+
         // GET /api/progress/courses/{courseId}
         group.MapGet("/courses/{courseId:guid}", async (
             Guid courseId,
