@@ -81,6 +81,8 @@ public sealed record LessonCompleted(
 
 public sealed record CourseCompleted(
     Guid UserId, Guid CourseId, Guid TenantId,
+    string? CourseName,      // null in Phase 1; populated once read-model exists
+    string? LearnerName,     // null in Phase 1; populated once read-model exists
     DateTimeOffset OccurredAt);
 
 public record ContentUploaded(
@@ -183,6 +185,13 @@ public record SubscriptionCancelled(
     Guid UserId, Guid TenantId,
     string PlanId, DateTimeOffset OccurredAt);
 
+// Phase 1 — plain PDF certificate issuance
+public sealed record CertificateIssued(
+    Guid EventId, Guid TenantId, Guid CertificateId,
+    Guid UserId, Guid CourseId, string CertificateNumber,
+    Guid VerificationCode, DateTimeOffset IssuedAt, DateTimeOffset OccurredAt);
+
+// Phase 4 — Open Badges 3.0 verifiable credential
 public record CredentialIssued(
     Guid UserId, Guid CourseId, Guid TenantId,
     Guid CredentialId, DateTimeOffset OccurredAt);
@@ -268,6 +277,7 @@ public record LabSessionTerminated(
 | `ContentProcessingCompleted` | ContentService.Worker | CourseService (update lesson duration), NotificationWorker (instructor notice) |
 | `ContentProcessingFailed` | ContentService.Worker | NotificationWorker (alert instructor) |
 | `AssessmentSubmitted` | AssessmentService | ProgressService (lesson-quiz-pass → lesson complete), NotificationWorker (result email), GamificationService* |
-| `CredentialIssued` | CertificateService | NotificationWorker |
+| `CertificateIssued` | CertificateService | NotificationWorker (certificate email with PDF link) — Phase 1; carries `CertificateNumber` + `VerificationCode` so worker renders URL without callback |
+| `CredentialIssued` | CertificateService | NotificationWorker — Phase 4 (Open Badges 3.0 verifiable credential) |
 
 *GamificationService is Phase 2 — NotificationWorker stubs the XP award in Phase 1.

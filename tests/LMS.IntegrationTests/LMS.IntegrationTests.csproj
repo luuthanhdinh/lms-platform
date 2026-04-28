@@ -34,5 +34,8 @@
     <ProjectReference Include="..\..\src\services\LMS.AssessmentService\LMS.AssessmentService.Api\LMS.AssessmentService.Api.csproj" />
     <ProjectReference Include="..\..\src\services\LMS.AssessmentService\LMS.AssessmentService.Domain\LMS.AssessmentService.Domain.csproj" />
     <ProjectReference Include="..\..\src\services\LMS.AssessmentService\LMS.AssessmentService.Infrastructure\LMS.AssessmentService.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\services\LMS.CertificateService\LMS.CertificateService.Api\LMS.CertificateService.Api.csproj" />
+    <ProjectReference Include="..\..\src\services\LMS.CertificateService\LMS.CertificateService.Domain\LMS.CertificateService.Domain.csproj" />
+    <ProjectReference Include="..\..\src\services\LMS.CertificateService\LMS.CertificateService.Infrastructure\LMS.CertificateService.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
