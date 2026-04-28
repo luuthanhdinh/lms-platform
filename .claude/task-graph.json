@@ -1,195 +1,203 @@
 {
-  "feature": "LMS.EnrollmentService — Postgres-backed enrolment service with IsFree gate, duplicate-enrol gate, UserEnrolled + EnrollmentCancelled publishers, CourseArchived consumer (suspend active enrolments)",
+  "feature": "LMS.ProgressService (Phase 1 #6) — lesson + course completion tracking with MassTransit outbox",
   "phase": 1,
   "complexity": "M",
   "tasks": [
     {
       "id": "T1",
       "agent": "events-architect",
-      "title": "Add EnrollmentCancelled record to LMS.Contracts; verify UserEnrolled unchanged",
-      "spec": "CREATE the new file src/LMS.Contracts/Enrollment/EnrollmentCancelled.cs containing exactly:\n\n    public sealed record EnrollmentCancelled(\n        Guid EventId, Guid TenantId, Guid EnrollmentId,\n        Guid UserId, Guid CourseId, DateTimeOffset OccurredAt);\n\nNamespace: LMS.Contracts.Enrollment. Mirror XML-doc style of existing UserEnrolled.cs (summary describes publisher = EnrollmentService, consumers = ProgressService freeze, CourseService decrement, NotificationWorker email). Then VERIFY src/LMS.Contracts/Enrollment/UserEnrolled.cs still has NO EventId field — do NOT modify it (consumers dedupe on natural key (UserId, CourseId)). Do NOT define event records anywhere outside LMS.Contracts.",
+      "title": "Add LessonCompleted + CourseCompleted records to LMS.Contracts",
+      "spec": "Create src/LMS.Contracts/Progress/LessonCompleted.cs and src/LMS.Contracts/Progress/CourseCompleted.cs as sealed records matching the shapes locked in contracts.md section 3 (no EventId; idempotency on natural keys). Namespace: LMS.Contracts.Progress. No consumers wired in this task — pure contract.",
       "files": [
-        "src/LMS.Contracts/Enrollment/EnrollmentCancelled.cs"
+        "src/LMS.Contracts/Progress/LessonCompleted.cs",
+        "src/LMS.Contracts/Progress/CourseCompleted.cs"
       ],
       "depends_on": [],
-      "branch": "feature/enrollmentservice-T1-events",
-      "worktree": ".claude-worktrees/T1-enrollmentservice-events",
+      "branch": "feature/progress-T1-events",
+      "worktree": ".claude-worktrees/T1-progress-events",
       "timeout_minutes": 15,
       "acceptance": ["dotnet build src/LMS.Contracts/LMS.Contracts.csproj"]
     },
     {
       "id": "T2",
       "agent": "backend",
-      "title": "Scaffold 4-project layout for LMS.EnrollmentService",
-      "spec": "Create the four projects under src/services/LMS.EnrollmentService/ (Domain, Infrastructure, Api, Migrator) mirroring LMS.CourseService project metadata exactly (TFM net9.0, ImplicitUsings, Nullable). Project references per contracts.md section 1. Add all four projects to LMS.slnx. Empty class-library shells for Domain/Infrastructure; Program.cs stubs in Api+Migrator. Api launchSettings.json port 5104. ServiceDefaults reference on Api+Migrator. Use the scaffold-service skill conventions.",
+      "title": "Scaffold ProgressService 4-project layout",
+      "spec": "Use /scaffold-service style: create src/services/LMS.ProgressService/{Domain,Infrastructure,Api,Migrator} csproj files with the references locked in contracts.md section 1. Add to LMS.slnx. NuGet packages per contracts. Empty Program.cs in Api + Migrator (compiles). Do NOT add entities or DbContext yet (T3/T4 do that).",
       "files": [
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/LMS.EnrollmentService.Domain.csproj",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/LMS.EnrollmentService.Infrastructure.csproj",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/LMS.EnrollmentService.Api.csproj",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Program.cs",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Properties/launchSettings.json",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Migrator/LMS.EnrollmentService.Migrator.csproj",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Migrator/Program.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Domain/LMS.ProgressService.Domain.csproj",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/LMS.ProgressService.Infrastructure.csproj",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Api/LMS.ProgressService.Api.csproj",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Migrator/LMS.ProgressService.Migrator.csproj",
         "LMS.slnx"
       ],
       "depends_on": [],
-      "branch": "feature/enrollmentservice-T2-scaffold",
-      "worktree": ".claude-worktrees/T2-enrollmentservice-scaffold",
-      "timeout_minutes": 25,
+      "branch": "feature/progress-T2-scaffold",
+      "worktree": ".claude-worktrees/T2-progress-scaffold",
+      "timeout_minutes": 20,
       "acceptance": ["dotnet build LMS.slnx"]
     },
     {
       "id": "T3",
       "agent": "backend",
-      "title": "Domain layer: Enrollment entity, EnrollmentStatus enum, ITenantContext, repository interface, DTOs",
-      "spec": "Implement Enrollment : TenantEntity per contracts.md section 2 (UserId, CourseId, Status, IsFree, EnrolledAt, CompletedAt?, CancelledAt?, SuspendedAt?, SuspensionReason?). Implement EnrollmentStatus enum (Active=0, Completed=1, Suspended=2, Cancelled=3). Define ITenantContext interface mirroring CourseService.Domain pattern. Define IEnrollmentRepository (tenant-scoped queries; relies on global filter). Add response DTO records (EnrollmentDto, EnrollRequest, EnrollmentCountDto, Page<T>) per contracts.md section 5.",
+      "title": "Domain layer — entities, enums, DTOs, ITenantContext",
+      "spec": "In LMS.ProgressService.Domain: add Entities/LessonProgress.cs, Entities/CourseProgress.cs, Enums/ProgressStatus.cs (per contracts.md section 2 and docs/entities.md). Add Dtos/ for CompleteLessonRequest, LessonProgressDto, CourseProgressDto, CourseProgressSummaryDto, LessonAnalyticsDto. Add Tenancy/ITenantContext.cs interface (TenantId getter) — match EnrollmentService pattern.",
       "files": [
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/Entities/Enrollment.cs",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/Enums/EnrollmentStatus.cs",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/Abstractions/ITenantContext.cs",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/Repositories/IEnrollmentRepository.cs",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/Dtos/EnrollmentDtos.cs"
+        "src/services/LMS.ProgressService/LMS.ProgressService.Domain/Entities/LessonProgress.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Domain/Entities/CourseProgress.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Domain/Enums/ProgressStatus.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Domain/Dtos/ProgressDtos.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Domain/Tenancy/ITenantContext.cs"
       ],
       "depends_on": ["T2"],
-      "branch": "feature/enrollmentservice-T3-domain",
-      "worktree": ".claude-worktrees/T3-enrollmentservice-domain",
-      "timeout_minutes": 30,
-      "acceptance": ["dotnet build src/services/LMS.EnrollmentService/LMS.EnrollmentService.Domain/LMS.EnrollmentService.Domain.csproj"]
+      "branch": "feature/progress-T3-domain",
+      "worktree": ".claude-worktrees/T3-progress-domain",
+      "timeout_minutes": 20,
+      "acceptance": ["dotnet build src/services/LMS.ProgressService/LMS.ProgressService.Domain/LMS.ProgressService.Domain.csproj"]
     },
     {
       "id": "T4",
       "agent": "backend",
-      "title": "Infrastructure: EnrollmentDbContext, EF config, repository, CourseArchived consumer, MassTransit outbox + DI",
-      "spec": "Implement EnrollmentDbContext (DbSet<Enrollment>, schema 'enrollments') with global query filter on TenantId via injected ITenantContext (matches CourseService pattern). Configure entity per contracts.md section 2: table 'enrollments', partial unique index on (TenantId, UserId, CourseId) WHERE Status=Active, plus (TenantId, UserId, Status) and (TenantId, CourseId, Status) indexes; concurrency token via xmin (.IsRowVersion()). Implement EnrollmentRepository. Implement CourseArchivedConsumer (Infrastructure/Consumers): loads active enrolments for (TenantId, CourseId), sets Status=Suspended, SuspendedAt=now, SuspensionReason='course-archived'; idempotent via MassTransit inbox on EventId. Wire MassTransit with AddEntityFrameworkOutbox<EnrollmentDbContext> + RabbitMQ + UseMessageRetry intervals 1s,5s,30s. Provide AddEnrollmentInfrastructure(IConfiguration) DI extension consumed by Api and Migrator. NuGet: Microsoft.EntityFrameworkCore, Npgsql.EntityFrameworkCore.PostgreSQL, MassTransit, MassTransit.RabbitMQ, MassTransit.EntityFrameworkCore.",
+      "title": "Infrastructure — ProgressDbContext, EF config, MassTransit consumers",
+      "spec": "Implement ProgressDbContext (schema=progress, two DbSets, global TenantId filter via reflection over TenantEntity descendants, indexes per contracts section 2, xmin row version). Add UserEnrolledConsumer + EnrollmentCancelledConsumer in Consumers/. Add MassTransit DI extension with AddEntityFrameworkOutbox<ProgressDbContext>, retry Intervals(1s,5s,30s). Implement HttpContextTenantContext.cs reading X-Tenant-Id. Reference LMS.Contracts.Enrollment.UserEnrolled and EnrollmentCancelled. Behaviour per contracts section 3.",
       "files": [
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/Data/EnrollmentDbContext.cs",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/Data/EnrollmentEntityConfiguration.cs",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/Repositories/EnrollmentRepository.cs",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/Consumers/CourseArchivedConsumer.cs",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/DependencyInjection.cs"
+        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Data/ProgressDbContext.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Data/ProgressDbContextFactory.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Consumers/UserEnrolledConsumer.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Consumers/EnrollmentCancelledConsumer.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Tenancy/HttpContextTenantContext.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/DependencyInjection.cs"
       ],
       "depends_on": ["T1", "T3"],
-      "branch": "feature/enrollmentservice-T4-infra",
-      "worktree": ".claude-worktrees/T4-enrollmentservice-infra",
-      "timeout_minutes": 60,
-      "acceptance": ["dotnet build src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/LMS.EnrollmentService.Infrastructure.csproj"]
+      "branch": "feature/progress-T4-infra",
+      "worktree": ".claude-worktrees/T4-progress-infra",
+      "timeout_minutes": 45,
+      "acceptance": ["dotnet build src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/LMS.ProgressService.Infrastructure.csproj"]
     },
     {
       "id": "T5",
       "agent": "db-migrator",
-      "title": "Initial EF Core migration: schema 'enrollments' + table + indexes + outbox/inbox tables",
-      "spec": "Generate EF Core migration named '20260427_001_InitialEnrollmentSchema' creating: schema 'enrollments'; table 'enrollments' with columns per contracts.md section 2; partial unique index on (TenantId, UserId, CourseId) WHERE Status=0 (Active); standard indexes (TenantId, UserId, Status) and (TenantId, CourseId, Status); MassTransit outbox/inbox tables (OutboxMessage, OutboxState, InboxState) in same schema. Wire Migrator Program.cs as IHostedService that calls Database.MigrateAsync() and exits 0 (matches CourseService.Migrator pattern). Use dotnet-ef-migrations skill. Migration is additive only — no data backfill needed.",
+      "title": "Initial EF Core migration + Migrator host",
+      "spec": "Generate migration 20260427_001_InitialProgressSchema covering: schema progress, tables lesson_progress + course_progress with all columns/indexes per contracts section 2, plus MassTransit outbox/inbox/state tables in same schema. Implement Migrator/Program.cs as IHostedService that runs db.Database.MigrateAsync() once and exits 0. Match EnrollmentService.Migrator pattern.",
       "files": [
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure/Migrations/",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Migrator/Program.cs"
+        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Migrations/20260427_001_InitialProgressSchema.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Migrations/20260427_001_InitialProgressSchema.Designer.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure/Migrations/ProgressDbContextModelSnapshot.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Migrator/Program.cs"
       ],
       "depends_on": ["T4"],
-      "branch": "feature/enrollmentservice-T5-migration",
-      "worktree": ".claude-worktrees/T5-enrollmentservice-migration",
+      "branch": "feature/progress-T5-migration",
+      "worktree": ".claude-worktrees/T5-progress-migration",
       "timeout_minutes": 30,
       "acceptance": [
-        "dotnet build src/services/LMS.EnrollmentService/LMS.EnrollmentService.Migrator/LMS.EnrollmentService.Migrator.csproj",
-        "dotnet ef migrations script --project src/services/LMS.EnrollmentService/LMS.EnrollmentService.Infrastructure --startup-project src/services/LMS.EnrollmentService/LMS.EnrollmentService.Migrator"
+        "dotnet build src/services/LMS.ProgressService/LMS.ProgressService.Migrator/LMS.ProgressService.Migrator.csproj",
+        "dotnet ef migrations list --project src/services/LMS.ProgressService/LMS.ProgressService.Infrastructure --startup-project src/services/LMS.ProgressService/LMS.ProgressService.Migrator"
       ]
     },
     {
       "id": "T6",
       "agent": "backend",
-      "title": "Api layer: enrol/list/get/cancel/course-list/count endpoints, IsFree + duplicate gates, UserEnrolled + EnrollmentCancelled publishers",
-      "spec": "Implement all endpoints per contracts.md section 5 with Minimal API endpoint groups under /api/enrollments. POST /api/enrollments: requires X-Roles to contain 'student' OR 'admin' OR 'org-admin' (any other role → 403; admin/org-admin = enrol-on-behalf bypass; UserId always sourced from X-User-Id header, never from request body); validates EnrollRequest (FluentValidation), enforces IsFree gate (409 PAYMENT_REQUIRED with extensions.code), enforces duplicate gate (409 ALREADY_ENROLLED) by checking active row for (TenantId, UserId, CourseId), inserts Enrollment with Status=Active and EnrolledAt=now, publishes UserEnrolled via outbox in same SaveChanges, returns 201 EnrollmentDto. GET /api/enrollments (paged; non-admin scoped to UserId from header). GET /{id} (404 cross-tenant). DELETE /{id} (owner-or-admin, 409 NOT_ACTIVE if not Active, sets Status=Cancelled + CancelledAt=now, publishes EnrollmentCancelled with new EventId). GET /courses/{courseId} (instructor/admin). GET /courses/{courseId}/count. HeaderTenantContext + TenantHeaderMiddleware reads X-User-Id, X-Tenant-Id, X-Roles (no JWT validation). ProblemDetails with extensions.code for PAYMENT_REQUIRED, ALREADY_ENROLLED, NOT_ACTIVE, TENANT_REQUIRED. Wire ServiceDefaults, AddEnrollmentInfrastructure, FeatureManagement, OpenTelemetry. Listen on port 5104.",
+      "title": "Api — Minimal API endpoints, validators, Program.cs, gateway route",
+      "spec": "Implement Program.cs (Minimal API) with all endpoints from contracts.md section 5. Header tenancy middleware (X-Tenant-Id required, 400 TENANT_REQUIRED). FluentValidation validator for CompleteLessonRequest (CourseId non-empty; WatchPercent in [0,100] else INVALID_WATCH_PERCENT). Endpoint handlers implement the recompute semantics in section 5 (atomic upsert + outbox publish of LessonCompleted, conditional CourseCompleted on transition to 100%). Authorization via X-Roles header (instructor/admin for analytics; student for self routes). Wire gateway: append progress route + cluster to src/gateway/LMS.Gateway/appsettings.json. Update src/services/LMS.ProgressService/LMS.ProgressService.Api/Properties/launchSettings.json with port 5106.",
       "files": [
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Program.cs",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Endpoints/",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Validators/",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Tenancy/HeaderTenantContext.cs",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Tenancy/TenantHeaderMiddleware.cs",
-        "src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/Authorization/AuthorizationHelpers.cs"
+        "src/services/LMS.ProgressService/LMS.ProgressService.Api/Program.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Api/Endpoints/ProgressEndpoints.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Api/Validators/CompleteLessonRequestValidator.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Api/Authorization/RoleChecks.cs",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Api/Properties/launchSettings.json",
+        "src/services/LMS.ProgressService/LMS.ProgressService.Api/appsettings.json",
+        "src/gateway/LMS.Gateway/appsettings.json"
       ],
       "depends_on": ["T4"],
-      "branch": "feature/enrollmentservice-T6-api",
-      "worktree": ".claude-worktrees/T6-enrollmentservice-api",
-      "timeout_minutes": 75,
-      "acceptance": ["dotnet build src/services/LMS.EnrollmentService/LMS.EnrollmentService.Api/LMS.EnrollmentService.Api.csproj"]
+      "branch": "feature/progress-T6-api",
+      "worktree": ".claude-worktrees/T6-progress-api",
+      "timeout_minutes": 60,
+      "acceptance": ["dotnet build src/services/LMS.ProgressService/LMS.ProgressService.Api/LMS.ProgressService.Api.csproj"]
     },
     {
       "id": "T7",
       "agent": "gateway-ops",
-      "title": "Aspire AppHost: register lms-enrollments DB, enrollment-migrator, enrollment Api; verify gateway YARP route",
-      "spec": "Apply AppHost diff in contracts.md section 6 in src/LMS.AppHost/Program.cs: uncomment + add 'var enrollmentDb = postgres.AddDatabase(\"lms-enrollments\");'; add enrollment-migrator project (.WithReference(enrollmentDb).WaitFor(enrollmentDb)); add enrollment Api project named 'enrollment' (.WithReference(enrollmentDb).WithReference(rabbitmq).WaitForCompletion(enrollmentMigrator)); add 'gateway.WithReference(enrollment);'. Resource name MUST be 'enrollment' to match YARP cluster destination http://enrollment. Confirm in spec output that gateway appsettings.json already routes /api/enrollments/{**rest} → 'enrollment' cluster (no gateway change required).",
+      "title": "AppHost wiring — register progress + progress-migrator resources",
+      "spec": "Apply the locked diff in contracts.md section 6 to src/LMS.AppHost/Program.cs: AddDatabase('lms-progress'), AddProject<Projects.LMS_ProgressService_Migrator>('progress-migrator') with WaitFor(progressDb), AddProject<Projects.LMS_ProgressService_Api>('progress') with WithReference(progressDb)+WithReference(rabbitmq)+WaitForCompletion(progressMigrator), gateway.WithReference(progress). Remove the stale `// builder.AddProject<Projects.LMS_ProgressService>` comment.",
       "files": [
-        "src/LMS.AppHost/Program.cs"
+        "src/LMS.AppHost/Program.cs",
+        "src/LMS.AppHost/LMS.AppHost.csproj"
       ],
-      "depends_on": ["T5", "T6"],
-      "branch": "feature/enrollmentservice-T7-apphost",
-      "worktree": ".claude-worktrees/T7-enrollmentservice-apphost",
-      "timeout_minutes": 20,
+      "depends_on": ["T2", "T5", "T6"],
+      "branch": "feature/progress-T7-apphost",
+      "worktree": ".claude-worktrees/T7-progress-apphost",
+      "timeout_minutes": 15,
       "acceptance": ["dotnet build src/LMS.AppHost/LMS.AppHost.csproj"]
     },
     {
       "id": "T8",
       "agent": "tester",
-      "title": "Integration + unit + architecture + contract tests for EnrollmentService",
-      "spec": "Per contracts.md section 8. Use xunit-integration skill: WebApplicationFactory + Testcontainers (Postgres + RabbitMQ) + MassTransit test harness. Tenant isolation pair on /api/enrollments/{id}. POST IsFree=true returns 201 + publishes UserEnrolled. POST IsFree=false → 409 PAYMENT_REQUIRED. Duplicate active enrol → 409 ALREADY_ENROLLED. Re-enrol after cancel succeeds. DELETE by owner → 204, status Cancelled, publishes EnrollmentCancelled. GET / scopes to caller for non-admin. Course-scoped count returns active+total. CourseArchivedConsumer suspends active enrolments and is idempotent on EventId (consume same message twice). Architecture: Enrollment inherits TenantEntity; EnrollmentDbContext applies global filter on TenantId. Contract: UserEnrolled has no EventId; EnrollmentCancelled shape stable.",
+      "title": "Integration + unit + architecture + contract tests",
+      "spec": "Add tests under tests/LMS.IntegrationTests/ProgressService/ using xunit-integration skill (Testcontainers Postgres + RabbitMQ + MassTransit harness + Keycloak header stub). Cover every scenario in contracts.md section 8 (tenant pair, complete-lesson happy path + idempotency, CourseCompleted-once on transition, UserEnrolled consumer upsert, EnrollmentCancelled consumer touches LastAccessedAt only, analytics 403). Add unit tests for validator + recompute helper + DTO mapping. Add architecture assertions in LMS.ArchitectureTests for TenantEntity inheritance + global filter. Add contract tests in LMS.ContractTests asserting LessonCompleted/CourseCompleted record shapes.",
       "files": [
-        "tests/LMS.IntegrationTests/EnrollmentService/",
-        "tests/LMS.ContractTests/Enrollment/",
-        "tests/LMS.ArchitectureTests/EnrollmentServiceArchitectureTests.cs"
+        "tests/LMS.IntegrationTests/ProgressService/Fixtures/ProgressFactory.cs",
+        "tests/LMS.IntegrationTests/ProgressService/CompleteLessonTests.cs",
+        "tests/LMS.IntegrationTests/ProgressService/TenantIsolationTests.cs",
+        "tests/LMS.IntegrationTests/ProgressService/Consumers/UserEnrolledConsumerTests.cs",
+        "tests/LMS.IntegrationTests/ProgressService/Consumers/EnrollmentCancelledConsumerTests.cs",
+        "tests/LMS.IntegrationTests/ProgressService/Unit/CompleteLessonRequestValidatorTests.cs",
+        "tests/LMS.IntegrationTests/ProgressService/Unit/RecomputeTests.cs",
+        "tests/LMS.ArchitectureTests/ProgressServiceArchitectureTests.cs",
+        "tests/LMS.ContractTests/ProgressEventsContractTests.cs"
       ],
       "depends_on": ["T6", "T7"],
-      "branch": "feature/enrollmentservice-T8-tests",
-      "worktree": ".claude-worktrees/T8-enrollmentservice-tests",
-      "timeout_minutes": 90,
+      "branch": "feature/progress-T8-tests",
+      "worktree": ".claude-worktrees/T8-progress-tests",
+      "timeout_minutes": 75,
       "acceptance": [
-        "dotnet test tests/LMS.IntegrationTests --filter FullyQualifiedName~EnrollmentService",
-        "dotnet test tests/LMS.ContractTests --filter FullyQualifiedName~Enrollment",
-        "dotnet test tests/LMS.ArchitectureTests --filter FullyQualifiedName~EnrollmentService"
+        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~ProgressService",
+        "dotnet test tests/LMS.ArchitectureTests/LMS.ArchitectureTests.csproj --filter FullyQualifiedName~ProgressService",
+        "dotnet test tests/LMS.ContractTests/LMS.ContractTests.csproj --filter FullyQualifiedName~Progress"
       ]
     },
     {
       "id": "T9",
       "agent": "security-auditor",
-      "title": "Tenant isolation + auth + IsFree-gate audit",
-      "spec": "Run tenant-isolation skill against EnrollmentService: (a) global EF query filter on TenantId is applied and not bypassed (.IgnoreQueryFilters() check); (b) no endpoint trusts a body-supplied TenantId — always sourced from X-Tenant-Id header; (c) cross-tenant lookups return 404 not 403 (leak-safe); (d) IsFree gate returns 409 PAYMENT_REQUIRED before any DB write; (e) duplicate-enrol gate cannot be raced (relies on partial unique index, not just app-level check); (f) authorization helpers correctly enforce owner-or-admin and instructor-or-admin; (g) CourseArchivedConsumer honours message TenantId and is idempotent on EventId; (h) no JWT validation downstream — only X-* headers; (i) no direct HTTP to CourseService — IsFree comes from request body only.",
-      "files": ["src/services/LMS.EnrollmentService/"],
-      "depends_on": ["T8"],
-      "branch": "feature/enrollmentservice-T9-secaudit",
-      "worktree": ".claude-worktrees/T9-enrollmentservice-secaudit",
-      "timeout_minutes": 30,
-      "acceptance": ["audit report with zero high-severity findings"]
+      "title": "Tenant-isolation + JWT-trust audit on ProgressService",
+      "spec": "Run tenant-isolation skill against ProgressService surface. Verify: every entity inherits TenantEntity, global query filter applied for both DbSets, no endpoint re-validates JWT, X-User-Id used only as identity (never trusted for tenant), consumers stamp TenantId from event payload (not HttpContext), analytics endpoint cannot leak cross-tenant rows. Produce a structured finding list — empty list = pass.",
+      "files": [
+        "src/services/LMS.ProgressService",
+        "tests/LMS.IntegrationTests/ProgressService"
+      ],
+      "depends_on": ["T6", "T7", "T8"],
+      "branch": "feature/progress-T9-audit",
+      "worktree": ".claude-worktrees/T9-progress-audit",
+      "timeout_minutes": 25,
+      "acceptance": ["audit report has zero high/critical findings"]
     },
     {
       "id": "T10",
       "agent": "reviewer",
-      "title": "Code review against contracts + LMS absolute rules",
-      "spec": "Use code-reviewer skill. Cross-check every entity field, event shape, endpoint path, DTO, and AppHost wiring against .claude/contracts.md. Verify Enrollment inherits TenantEntity. Verify EF global query filter on TenantId. Verify event records live only in LMS.Contracts. Verify no direct HTTP between services. Verify UserEnrolled retains its no-EventId shape and EnrollmentCancelled carries EventId. Verify outbox is wired (AddEntityFrameworkOutbox<EnrollmentDbContext>). Verify Aspire resource name is 'enrollment' (matches YARP cluster destination). Verify port 5104 in launchSettings.json.",
-      "files": [
-        "src/services/LMS.EnrollmentService/",
-        "src/LMS.Contracts/Enrollment/",
-        "src/LMS.AppHost/Program.cs"
-      ],
-      "depends_on": ["T8", "T9"],
-      "branch": "feature/enrollmentservice-T10-review",
-      "worktree": ".claude-worktrees/T10-enrollmentservice-review",
+      "title": "End-to-end review against contracts.md + absolute rules",
+      "spec": "Run code-reviewer skill across all branches T1–T9. Check: contracts.md section-by-section compliance, absolute rules (TenantEntity, global filter, no direct HTTP between services, JWT only at gateway, events as records in LMS.Contracts), DAG of services in AppHost, idempotency keys on consumers, outbox usage on every Publish, error-shape consistency. Block on any contract violation.",
+      "files": [],
+      "depends_on": ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9"],
+      "branch": "feature/progress-T10-review",
+      "worktree": ".claude-worktrees/T10-progress-review",
       "timeout_minutes": 30,
-      "acceptance": ["review report with all violations resolved or explicitly waived"]
+      "acceptance": ["reviewer report = approved"]
     },
     {
       "id": "T11",
       "agent": "docs-writer",
-      "title": "Author docs/services/enrollment.md, sync entities.md + events.md + architecture.md + README",
-      "spec": "Create docs/services/enrollment.md with shipped endpoints, request/response shapes, IsFree gate, duplicate gate, CourseArchived suspension flow, published events (UserEnrolled, EnrollmentCancelled). Update docs/entities.md EnrollmentService section to match locked Enrollment shape (Status enum values, IsFree denormalisation, suspended fields). Update docs/events.md to add EnrollmentCancelled record and confirm UserEnrolled retains no EventId. Note EnrollmentService is wired into AppHost on port 5104 with Postgres lms-enrollments DB. Update README service checklist to mark EnrollmentService done.",
+      "title": "Update docs to reflect shipped ProgressService",
+      "spec": "Create docs/services/progress.md (NEW under services/ — copy from existing docs/progress.md, fix port to 5106, drop deferred features to a 'Phase 2+' section, document the 7 open decisions from contracts.md section 9). Update docs/architecture.md service map to include progress at port 5106. Update docs/events.md routing table — confirm LessonCompleted/CourseCompleted publishers + consumers match what shipped. Append an entry to docs/adr-index.md only if a new ADR is warranted (likely not — open decisions extend ADR-004).",
       "files": [
-        "docs/services/enrollment.md",
-        "docs/entities.md",
-        "docs/events.md",
+        "docs/services/progress.md",
+        "docs/progress.md",
         "docs/architecture.md",
-        "README.md"
+        "docs/events.md",
+        "docs/adr-index.md"
       ],
       "depends_on": ["T10"],
-      "branch": "feature/enrollmentservice-T11-docs",
-      "worktree": ".claude-worktrees/T11-enrollmentservice-docs",
+      "branch": "feature/progress-T11-docs",
+      "worktree": ".claude-worktrees/T11-progress-docs",
       "timeout_minutes": 25,
-      "acceptance": ["markdown lints pass"]
+      "acceptance": ["markdown lints clean", "links resolve"]
     }
   ]
 }

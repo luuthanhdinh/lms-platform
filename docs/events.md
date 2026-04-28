@@ -262,8 +262,8 @@ public record LabSessionTerminated(
 | `CourseArchived` | CourseService | EnrollmentService (suspend active enrollments), NotificationWorker |
 | `UserEnrolled` | EnrollmentService | ProgressService (seed record), CourseService (increment count), NotificationWorker |
 | `EnrollmentCancelled` | EnrollmentService | ProgressService (freeze progress), CourseService (decrement count), NotificationWorker (cancellation email) |
-| `LessonCompleted` | ProgressService | GamificationService*, NotificationWorker |
-| `CourseCompleted` | ProgressService | CertificateService, GamificationService* |
+| `LessonCompleted` | ProgressService | CertificateService (eligibility check), NotificationWorker (progress email), GamificationService* — file: `LMS.Contracts/Progress/LessonCompleted.cs` — no EventId; dedupe key `(UserId, LessonId)` |
+| `CourseCompleted` | ProgressService | CertificateService (issue certificate), NotificationWorker (completion email), GamificationService* — file: `LMS.Contracts/Progress/CourseCompleted.cs` — no EventId; dedupe key `(UserId, CourseId)`; published once per enrolment |
 | `ContentUploaded` | ContentService.Api | ContentService.Worker (trigger processing pipeline) |
 | `ContentProcessingCompleted` | ContentService.Worker | CourseService (update lesson duration), NotificationWorker (instructor notice) |
 | `ContentProcessingFailed` | ContentService.Worker | NotificationWorker (alert instructor) |

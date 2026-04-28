@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>LMS.ProgressService.Infrastructure</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.4" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+    <PackageReference Include="MassTransit" Version="8.4.1" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.4.1" />
+    <PackageReference Include="MassTransit.EntityFrameworkCore" Version="8.4.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LMS.ProgressService.Domain\LMS.ProgressService.Domain.csproj" />
+    <ProjectReference Include="..\..\..\LMS.Contracts\LMS.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\LMS.ServiceDefaults\LMS.ServiceDefaults.csproj" />
+  </ItemGroup>
+</Project>
