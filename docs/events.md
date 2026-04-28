@@ -75,11 +75,11 @@ public record CourseArchived(
     Guid EventId, Guid TenantId, Guid CourseId,
     Guid InstructorId, DateTimeOffset OccurredAt);
 
-public record LessonCompleted(
+public sealed record LessonCompleted(
     Guid UserId, Guid LessonId, Guid CourseId,
-    Guid TenantId, float WatchPercent, DateTimeOffset OccurredAt);
+    Guid TenantId, DateTimeOffset OccurredAt);
 
-public record CourseCompleted(
+public sealed record CourseCompleted(
     Guid UserId, Guid CourseId, Guid TenantId,
     DateTimeOffset OccurredAt);
 
@@ -260,10 +260,10 @@ public record LabSessionTerminated(
 | `UserDeactivated` | IdentityService | EnrollmentService (suspend enrollments), NotificationWorker |
 | `CoursePublished` | CourseService | EnrollmentService (open enrolment), NotificationWorker |
 | `CourseArchived` | CourseService | EnrollmentService (suspend active enrollments), NotificationWorker |
-| `UserEnrolled` | EnrollmentService | ProgressService (seed record), CourseService (increment count), NotificationWorker |
-| `EnrollmentCancelled` | EnrollmentService | ProgressService (freeze progress), CourseService (decrement count), NotificationWorker (cancellation email) |
-| `LessonCompleted` | ProgressService | CertificateService (eligibility check), NotificationWorker (progress email), GamificationService* — file: `LMS.Contracts/Progress/LessonCompleted.cs` — no EventId; dedupe key `(UserId, LessonId)` |
-| `CourseCompleted` | ProgressService | CertificateService (issue certificate), NotificationWorker (completion email), GamificationService* — file: `LMS.Contracts/Progress/CourseCompleted.cs` — no EventId; dedupe key `(UserId, CourseId)`; published once per enrolment |
+| `UserEnrolled` | EnrollmentService | ProgressService (seed CourseProgress), CourseService (increment count), NotificationWorker |
+| `EnrollmentCancelled` | EnrollmentService | ProgressService (soft-freeze progress), CourseService (decrement count), NotificationWorker (cancellation email) |
+| `LessonCompleted` | ProgressService | CertificateService (eligibility check), NotificationWorker (progress email), GamificationService* — no EventId; dedupe key `(UserId, LessonId)` |
+| `CourseCompleted` | ProgressService | CertificateService (issue certificate), NotificationWorker (completion email), GamificationService* — no EventId; dedupe key `(UserId, CourseId)`; gated by `CourseProgress.CourseCompletedEventPublished` (publishes once per enrollment) |
 | `ContentUploaded` | ContentService.Api | ContentService.Worker (trigger processing pipeline) |
 | `ContentProcessingCompleted` | ContentService.Worker | CourseService (update lesson duration), NotificationWorker (instructor notice) |
 | `ContentProcessingFailed` | ContentService.Worker | NotificationWorker (alert instructor) |
