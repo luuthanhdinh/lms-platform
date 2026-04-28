@@ -1,0 +1,7 @@
+Welcome to {{ platform_name }}, {{ full_name }}!
+
+Your account is ready. You can now access all courses, track your progress, and earn certificates.
+
+Log in here: {{ login_url }}
+
+If you did not create an account, please ignore this email.

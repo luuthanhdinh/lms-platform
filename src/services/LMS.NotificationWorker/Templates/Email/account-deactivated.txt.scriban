@@ -1,0 +1,9 @@
+Account Deactivated — {{ platform_name }}
+
+Hello {{ full_name }},
+
+Your {{ platform_name }} account has been deactivated. You will no longer be able to access the platform.
+
+If you believe this is a mistake or need assistance, please contact our support team.
+
+This email was sent by {{ platform_name }}.

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Processing Failed</title>
+</head>
+<body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4; padding: 20px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden;">
+          <tr>
+            <td style="background-color: #dc2626; padding: 32px 40px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Processing Failed</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <h2 style="color: #1f2937; margin: 0 0 16px 0; font-size: 20px;">Video processing failed</h2>
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.5; margin: 0 0 16px 0;">
+                We were unable to process your video <strong>"{{ content_title }}"</strong>.
+              </p>
+              <div style="background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 16px; margin-bottom: 24px; border-radius: 4px;">
+                <p style="color: #b91c1c; font-size: 14px; margin: 0;"><strong>Reason:</strong> {{ reason }}</p>
+              </div>
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.5; margin: 0;">
+                Please check your video file and try uploading again. If the problem persists, contact support.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f9fafb; padding: 24px 40px; text-align: center;">
+              <p style="color: #9ca3af; font-size: 14px; margin: 0;">Supported formats: MP4, MOV, AVI, WebM. Max size: 2 GB.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

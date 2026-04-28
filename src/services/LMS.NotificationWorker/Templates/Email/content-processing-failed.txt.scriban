@@ -1,0 +1,9 @@
+Video Processing Failed
+
+We were unable to process your video "{{ content_title }}".
+
+Reason: {{ reason }}
+
+Please check your video file and try uploading again. If the problem persists, contact support.
+
+Supported formats: MP4, MOV, AVI, WebM. Max size: 2 GB.

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account Deactivated</title>
+</head>
+<body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4; padding: 20px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden;">
+          <tr>
+            <td style="background-color: #dc2626; padding: 32px 40px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px;">{{ platform_name }}</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <h2 style="color: #1f2937; margin: 0 0 16px 0; font-size: 20px;">Account Deactivated</h2>
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.5; margin: 0 0 16px 0;">
+                Hello {{ full_name }},
+              </p>
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.5; margin: 0 0 24px 0;">
+                Your {{ platform_name }} account has been deactivated. You will no longer be able to access the platform.
+              </p>
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.5; margin: 0 0 8px 0;">
+                If you believe this is a mistake or need assistance, please contact our support team.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f9fafb; padding: 24px 40px; text-align: center;">
+              <p style="color: #6b7280; font-size: 14px; margin: 0;">
+                Need help? <a href="mailto:support@{{ platform_name | string.downcase | string.replace ' ' '' }}.com" style="color: #2563eb; text-decoration: none;">Contact Support</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

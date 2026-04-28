@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "LMS.NotificationWorker": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

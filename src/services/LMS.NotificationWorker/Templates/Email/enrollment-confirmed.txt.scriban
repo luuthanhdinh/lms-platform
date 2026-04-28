@@ -1,0 +1,7 @@
+Enrollment Confirmed
+
+You are now enrolled in "{{ course_name }}". Start learning at your own pace.
+
+Start your course here: {{ course_url }}
+
+Good luck on your learning journey!

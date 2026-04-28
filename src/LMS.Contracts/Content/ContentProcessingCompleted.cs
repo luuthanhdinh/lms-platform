@@ -21,4 +21,7 @@ public sealed record ContentProcessingCompleted(
     int DurationSeconds,
 
     /// <summary>UTC instant processing was completed and the manifest became available.</summary>
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+
+    /// <summary>UserId of the person who uploaded the content.</summary>
+    Guid UploadedBy);
