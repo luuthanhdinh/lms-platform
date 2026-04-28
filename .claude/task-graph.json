@@ -1,271 +1,365 @@
 {
-  "feature": "LMS.NotificationWorker — Phase 1 service #9: stateless event-driven email worker (MailKit SMTP, Scriban templates, Redis idempotency).",
+  "feature": "LMS React Frontend — Phase 1 service #10: Vite + React 19 SPA, Keycloak-js auth, TanStack Query+Router, Zustand, shadcn/ui + Tailwind v4, single apiClient through YARP gateway.",
   "phase": 1,
   "complexity": "L",
   "tasks": [
     {
       "id": "T1",
-      "agent": "events-architect",
-      "title": "Extend ContentProcessingCompleted / Failed with UploadedBy (additive)",
-      "spec": "Per contracts.md section 9. Add `Guid UploadedBy` after `Guid TenantId` in both `LMS.Contracts/Content/ContentProcessingCompleted.cs` and `LMS.Contracts/Content/ContentProcessingFailed.cs`. Update `docs/events.md` records to match. No other event records change. NotificationWorker is the only consumer needing the field, but ContentService.Worker (publisher, currently not yet shipped) must also pass UploadedBy when implemented — leave a TODO comment near the records calling that out. Run a build of LMS.Contracts and any project that already references these records (none currently).",
+      "agent": "frontend",
+      "title": "Scaffold Vite + React 19 + TS project, deps, Tailwind v4, shadcn init",
+      "spec": "Create `frontend/` at repo root via `npm create vite@latest frontend -- --template react-ts`. Install deps per contracts.md §1: react@19, @tanstack/react-query@5, @tanstack/react-router@1, keycloak-js@25, axios, zustand@5, react-hook-form, @hookform/resolvers, zod, tailwindcss@4, @tailwindcss/vite, lucide-react. Dev: vitest, @testing-library/react, eslint, prettier. Configure `vite.config.ts` with @vitejs/plugin-react + @tailwindcss/vite + alias `@`→./src and port 5173. Configure tsconfig path alias. Init shadcn (`npx shadcn@latest init`). Copy `silent-check-sso.html` template into `public/`. Create `frontend/.env.example` with the four VITE_* vars from contracts.md §8. Append `frontend/node_modules/`, `frontend/.env.local`, `frontend/dist/` to repo `.gitignore`. Replace stub `App.tsx` with empty placeholder; do NOT wire routes yet.",
       "files": [
-        "src/LMS.Contracts/Content/ContentProcessingCompleted.cs",
-        "src/LMS.Contracts/Content/ContentProcessingFailed.cs",
-        "docs/events.md"
+        "frontend/package.json",
+        "frontend/vite.config.ts",
+        "frontend/tsconfig.json",
+        "frontend/tsconfig.app.json",
+        "frontend/tsconfig.node.json",
+        "frontend/index.html",
+        "frontend/postcss.config.js",
+        "frontend/tailwind.config.ts",
+        "frontend/components.json",
+        "frontend/.env.example",
+        "frontend/public/silent-check-sso.html",
+        "frontend/src/styles/globals.css",
+        "frontend/src/App.tsx",
+        ".gitignore"
       ],
       "depends_on": [],
-      "branch": "feature/notif-T1-event-extend",
-      "worktree": ".claude-worktrees/T1-notif-event",
-      "timeout_minutes": 20,
+      "branch": "feature/fe-T1-scaffold",
+      "worktree": ".claude-worktrees/T1-fe-scaffold",
+      "timeout_minutes": 40,
       "acceptance": [
-        "dotnet build src/LMS.Contracts/LMS.Contracts.csproj"
+        "cd frontend && npm install --no-audit --no-fund",
+        "cd frontend && npx tsc --noEmit",
+        "cd frontend && npm run build"
       ]
     },
     {
       "id": "T2",
-      "agent": "backend",
-      "title": "Scaffold LMS.NotificationWorker project",
-      "spec": "Create `src/services/LMS.NotificationWorker/` as a single-project worker (NOT the 4-project layout — no DB, no API). `dotnet new worker -n LMS.NotificationWorker`. Add to LMS.slnx. ProjectReferences: LMS.ServiceDefaults, LMS.Contracts, LMS.SharedKernel. NuGet: MassTransit, MassTransit.RabbitMQ, MailKit, Scriban, Aspire.StackExchange.Redis, Microsoft.FeatureManagement, Polly. TreatWarningsAsErrors. Empty Program.cs uses `Host.CreateApplicationBuilder` + `AddServiceDefaults` + MassTransit + Redis + FeatureManagement registration only — consumers come in T6. Create folder structure per contracts.md section 1 (empty `.gitkeep` placeholders OK). appsettings.json + appsettings.Development.json with sections per contracts.md section 4.",
+      "agent": "frontend",
+      "title": "Core lib: keycloak singleton + apiClient + publicApiClient + queryClient + env",
+      "spec": "Per contracts.md §2 and §6. Create `src/lib/env.ts` typing the four VITE_* vars. Create `src/lib/keycloak.ts` exporting Keycloak singleton. Create `src/lib/api-client.ts` exporting BOTH `apiClient` (with request interceptor that calls `keycloak.updateToken(30)` then attaches Bearer; response interceptor: 401 → `keycloak.login()`) AND `publicApiClient` (no interceptors). Create `src/lib/query-client.ts` exporting a `QueryClient` with `staleTime: 60_000`, `retry: 1`. Create `src/types/index.ts` with the verbatim type set from docs/frontend.md plus contracts.md §4 additions (ErrorResponse, SessionStartedDto, AnswerDto, AssessmentResultDto, AttemptSummaryDto, CertificateSummary, CertificateDetail, VerificationResult). NO React components in this task.",
       "files": [
-        "src/services/LMS.NotificationWorker/LMS.NotificationWorker.csproj",
-        "src/services/LMS.NotificationWorker/Program.cs",
-        "src/services/LMS.NotificationWorker/appsettings.json",
-        "src/services/LMS.NotificationWorker/appsettings.Development.json",
-        "src/services/LMS.NotificationWorker/Properties/launchSettings.json",
-        "LMS.slnx"
+        "frontend/src/lib/env.ts",
+        "frontend/src/lib/keycloak.ts",
+        "frontend/src/lib/api-client.ts",
+        "frontend/src/lib/query-client.ts",
+        "frontend/src/types/index.ts"
       ],
-      "depends_on": [],
-      "branch": "feature/notif-T2-scaffold",
-      "worktree": ".claude-worktrees/T2-notif-scaffold",
-      "timeout_minutes": 25,
+      "depends_on": ["T1"],
+      "branch": "feature/fe-T2-core-lib",
+      "worktree": ".claude-worktrees/T2-fe-core-lib",
+      "timeout_minutes": 40,
       "acceptance": [
-        "dotnet build src/services/LMS.NotificationWorker/LMS.NotificationWorker.csproj"
+        "cd frontend && npx tsc --noEmit"
       ]
     },
     {
       "id": "T3",
-      "agent": "backend",
-      "title": "Email + Templating + Idempotency primitives",
-      "spec": "Implement contracts.md section 3 + 4 primitives. (1) `Email/IEmailSender.cs` + `EmailMessage.cs` + `EmailSendResult.cs` records. (2) `Email/SmtpEmailSender.cs` using MailKit SmtpClient, STARTTLS gated by SmtpOptions.UseStartTls, Polly retry 3x exp 1/3/9s on SmtpProtocolException + IOException, returns EmailSendResult. (3) `Templates/ITemplateRenderer.cs` + `Templates/ScribanTemplateRenderer.cs` resolves `{templateId}.{lang}.{subject|html|text}.sbn` from EmbeddedResource manifest, fallback chain `{lang}->en->throw`. (4) `Idempotency/IIdempotencyStore.cs` + `Idempotency/RedisIdempotencyStore.cs` exposing `Task<bool> TryClaimAsync(string key, TimeSpan ttl, CancellationToken)` using `IDatabase.StringSetAsync(key, '1', ttl, When.NotExists)`. (5) `Options/SmtpOptions.cs` + `Options/NotificationOptions.cs` with `IValidateOptions` validators. (6) `Email/IUserContactCache.cs` + `Email/RedisUserContactCache.cs` storing JSON `{Email,DisplayName,Language}` with sliding 90d TTL. NO consumers in this task.",
+      "agent": "frontend",
+      "title": "Auth slice: useAuth, useCurrentUser, ProtectedRoute, main.tsx Keycloak.init",
+      "spec": "Per contracts.md §2. Implement `features/auth/hooks/useAuth.ts` (returns the locked shape — isAuthenticated, token, userId, tenantId, roles, hasRole, login, logout). Implement `features/auth/hooks/useCurrentUser.ts` (queries `/api/identity/me` with apiClient — returns profile DTO; key `['identity','me']`). Implement `features/auth/components/ProtectedRoute.tsx` per locked behavior (unauth → login; missing role → AccessDenied; else children). Implement `components/feedback/AccessDenied.tsx`. Implement `src/app/main.tsx` to call `keycloak.init({ onLoad:'check-sso', silentCheckSsoRedirectUri: origin+'/silent-check-sso.html', pkceMethod:'S256' })` then `ReactDOM.createRoot` rendering `<Providers>`. Implement `src/app/providers.tsx` wrapping `QueryClientProvider` + `RouterProvider` (router placeholder import — actual tree comes in T4). Bind `keycloak.onTokenExpired` to refresh.",
       "files": [
-        "src/services/LMS.NotificationWorker/Email/IEmailSender.cs",
-        "src/services/LMS.NotificationWorker/Email/EmailMessage.cs",
-        "src/services/LMS.NotificationWorker/Email/EmailSendResult.cs",
-        "src/services/LMS.NotificationWorker/Email/SmtpEmailSender.cs",
-        "src/services/LMS.NotificationWorker/Email/IUserContactCache.cs",
-        "src/services/LMS.NotificationWorker/Email/RedisUserContactCache.cs",
-        "src/services/LMS.NotificationWorker/Templates/ITemplateRenderer.cs",
-        "src/services/LMS.NotificationWorker/Templates/ScribanTemplateRenderer.cs",
-        "src/services/LMS.NotificationWorker/Idempotency/IIdempotencyStore.cs",
-        "src/services/LMS.NotificationWorker/Idempotency/RedisIdempotencyStore.cs",
-        "src/services/LMS.NotificationWorker/Options/SmtpOptions.cs",
-        "src/services/LMS.NotificationWorker/Options/NotificationOptions.cs"
+        "frontend/src/features/auth/hooks/useAuth.ts",
+        "frontend/src/features/auth/hooks/useCurrentUser.ts",
+        "frontend/src/features/auth/components/ProtectedRoute.tsx",
+        "frontend/src/components/feedback/AccessDenied.tsx",
+        "frontend/src/app/main.tsx",
+        "frontend/src/app/providers.tsx"
       ],
       "depends_on": ["T2"],
-      "branch": "feature/notif-T3-primitives",
-      "worktree": ".claude-worktrees/T3-notif-primitives",
-      "timeout_minutes": 60,
+      "branch": "feature/fe-T3-auth",
+      "worktree": ".claude-worktrees/T3-fe-auth",
+      "timeout_minutes": 50,
       "acceptance": [
-        "dotnet build src/services/LMS.NotificationWorker/LMS.NotificationWorker.csproj"
+        "cd frontend && npx tsc --noEmit"
       ]
     },
     {
       "id": "T4",
-      "agent": "backend",
-      "title": "Scriban template files + per-template view models",
-      "spec": "Author 11 template trios (subject/html/text Scriban files) under `Templates/Sbn/en/` for templateIds: user-registered, user-deactivated, course-published, course-archived, user-enrolled, enrollment-cancelled, course-completed, content-ready, content-failed, assessment-submitted, certificate-issued. Each with corresponding `Templates/Models/{TemplateId}Model.cs` immutable record. All `.sbn` files declared as `<EmbeddedResource>` in csproj. HTML templates wrap text in a minimal table layout; text templates plain text. Use `{{ user.email }}` style; rely on Scriban auto-encoding (no `| html.raw`). Subject lines kept short and ASCII. CTAs use `{{ frontend_base_url }}` placeholder fed from NotificationOptions.",
+      "agent": "frontend",
+      "title": "Router tree, RootLayout shell, base layout components, shadcn primitives",
+      "spec": "Per contracts.md §3. Create `src/app/router.tsx` with declarative TanStack Router tree (rootRoute + children for every path in §3 — components imported lazily where pages don't exist yet, use placeholder components for not-yet-built pages). Create `src/app/RootLayout.tsx` (Header + main `<Outlet/>` + footer). Create `components/layout/{Header,NavBar,UserMenu}.tsx` (UserMenu calls `useAuth().logout`). Create `components/layout/ui-store.ts` (Zustand: sidebarOpen, theme, toast queue per contracts.md §5). Create `components/feedback/{Skeleton,ErrorBanner,EmptyState}.tsx`. Add shadcn primitives by running `npx shadcn@latest add button card input label dialog dropdown-menu select tabs toast skeleton progress badge`. NO feature pages yet — placeholder pages for catalogue/dashboard/etc.",
       "files": [
-        "src/services/LMS.NotificationWorker/Templates/Models/UserRegisteredModel.cs",
-        "src/services/LMS.NotificationWorker/Templates/Models/UserDeactivatedModel.cs",
-        "src/services/LMS.NotificationWorker/Templates/Models/CoursePublishedModel.cs",
-        "src/services/LMS.NotificationWorker/Templates/Models/CourseArchivedModel.cs",
-        "src/services/LMS.NotificationWorker/Templates/Models/UserEnrolledModel.cs",
-        "src/services/LMS.NotificationWorker/Templates/Models/EnrollmentCancelledModel.cs",
-        "src/services/LMS.NotificationWorker/Templates/Models/CourseCompletedModel.cs",
-        "src/services/LMS.NotificationWorker/Templates/Models/ContentReadyModel.cs",
-        "src/services/LMS.NotificationWorker/Templates/Models/ContentFailedModel.cs",
-        "src/services/LMS.NotificationWorker/Templates/Models/AssessmentSubmittedModel.cs",
-        "src/services/LMS.NotificationWorker/Templates/Models/CertificateIssuedModel.cs",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-registered.subject.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-registered.html.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-registered.text.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-deactivated.subject.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-deactivated.html.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-deactivated.text.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-published.subject.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-published.html.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-published.text.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-archived.subject.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-archived.html.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-archived.text.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-enrolled.subject.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-enrolled.html.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-enrolled.text.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/enrollment-cancelled.subject.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/enrollment-cancelled.html.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/enrollment-cancelled.text.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-completed.subject.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-completed.html.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-completed.text.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/content-ready.subject.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/content-ready.html.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/content-ready.text.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/content-failed.subject.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/content-failed.html.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/content-failed.text.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/assessment-submitted.subject.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/assessment-submitted.html.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/assessment-submitted.text.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/certificate-issued.subject.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/certificate-issued.html.sbn",
-        "src/services/LMS.NotificationWorker/Templates/Sbn/en/certificate-issued.text.sbn"
+        "frontend/src/app/router.tsx",
+        "frontend/src/app/RootLayout.tsx",
+        "frontend/src/components/layout/Header.tsx",
+        "frontend/src/components/layout/NavBar.tsx",
+        "frontend/src/components/layout/UserMenu.tsx",
+        "frontend/src/components/layout/ui-store.ts",
+        "frontend/src/components/feedback/Skeleton.tsx",
+        "frontend/src/components/feedback/ErrorBanner.tsx",
+        "frontend/src/components/feedback/EmptyState.tsx",
+        "frontend/src/components/ui/button.tsx",
+        "frontend/src/components/ui/card.tsx",
+        "frontend/src/components/ui/input.tsx",
+        "frontend/src/components/ui/label.tsx",
+        "frontend/src/components/ui/dialog.tsx",
+        "frontend/src/components/ui/dropdown-menu.tsx",
+        "frontend/src/components/ui/select.tsx",
+        "frontend/src/components/ui/tabs.tsx",
+        "frontend/src/components/ui/toast.tsx",
+        "frontend/src/components/ui/skeleton.tsx",
+        "frontend/src/components/ui/progress.tsx",
+        "frontend/src/components/ui/badge.tsx"
       ],
-      "depends_on": ["T2"],
-      "branch": "feature/notif-T4-templates",
-      "worktree": ".claude-worktrees/T4-notif-templates",
+      "depends_on": ["T3"],
+      "branch": "feature/fe-T4-router-shell",
+      "worktree": ".claude-worktrees/T4-fe-router",
       "timeout_minutes": 60,
       "acceptance": [
-        "dotnet build src/services/LMS.NotificationWorker/LMS.NotificationWorker.csproj"
+        "cd frontend && npx tsc --noEmit",
+        "cd frontend && npm run build"
       ]
     },
     {
       "id": "T5",
-      "agent": "gateway-ops",
-      "title": "AppHost wiring: notifications worker + MailHog container + redis ref",
-      "spec": "Edit src/LMS.AppHost/Program.cs per contracts.md section 5. Add MailHog container resource (`mailhog/mailhog:v1.0.1`) with named endpoints `ui` (8025) and `smtp` (1025 tcp). Add `LMS_NotificationWorker` project block with `WithReference(rabbitmq)`, `WithReference(redis)`, `WithEnvironment Smtp__Host` from mail smtp endpoint, `WithEnvironment Smtp__Port=1025`, `WaitFor(rabbitmq)`, `WaitFor(redis)`, `WaitFor(mail)`. Aspire resource name MUST be `notifications` (matches docs/architecture.md). NO gateway changes — worker has no HTTP. Build succeeds.",
+      "agent": "frontend",
+      "title": "Feature: courses (hooks + catalogue + detail + editor + create form)",
+      "spec": "Per contracts.md §4. Implement `features/courses/api/use-courses.ts` exposing courseKeys + useCourses + useCourse + useCourseSyllabus + useCreateCourse + useUpdateCourse + usePublishCourse with mutation-success invalidations as documented. Implement components: CourseCard, CourseSyllabus, CreateCourseForm (React Hook Form + Zod schema from docs/frontend.md), PublishButton. Implement pages: CataloguePage (paginated grid), CourseDetailPage (header + syllabus + EnrollButton placeholder slot), CourseEditorPage (instructor — wraps CreateCourseForm in edit mode). Wire into router (replace placeholders in T4 router tree).",
       "files": [
-        "src/LMS.AppHost/Program.cs"
+        "frontend/src/features/courses/api/use-courses.ts",
+        "frontend/src/features/courses/components/CourseCard.tsx",
+        "frontend/src/features/courses/components/CourseSyllabus.tsx",
+        "frontend/src/features/courses/components/CreateCourseForm.tsx",
+        "frontend/src/features/courses/components/PublishButton.tsx",
+        "frontend/src/features/courses/pages/CataloguePage.tsx",
+        "frontend/src/features/courses/pages/CourseDetailPage.tsx",
+        "frontend/src/features/courses/pages/CourseEditorPage.tsx",
+        "frontend/src/features/courses/pages/InstructorCoursesPage.tsx",
+        "frontend/src/app/router.tsx"
       ],
-      "depends_on": ["T2"],
-      "branch": "feature/notif-T5-apphost",
-      "worktree": ".claude-worktrees/T5-notif-apphost",
-      "timeout_minutes": 20,
+      "depends_on": ["T4"],
+      "branch": "feature/fe-T5-courses",
+      "worktree": ".claude-worktrees/T5-fe-courses",
+      "timeout_minutes": 70,
       "acceptance": [
-        "dotnet build src/LMS.AppHost/LMS.AppHost.csproj"
+        "cd frontend && npx tsc --noEmit"
       ]
     },
     {
       "id": "T6",
-      "agent": "backend",
-      "title": "Implement 12 MassTransit consumers + Program.cs DI wiring",
-      "spec": "Per contracts.md section 2. Implement one IConsumer<T> per row in Consumers/ folder. Common base class `NotificationConsumerBase<TEvent>` provides: (a) idempotency claim via IIdempotencyStore using `notif:dedupe:{ConsumerType}:{key}` (key = EventId if present else MessageContext.MessageId), (b) recipient resolution via IUserContactCache (cache miss → log + drop + increment notifications.dropped{reason=cache-miss}), (c) template render via ITemplateRenderer with model factory delegate, (d) IEmailSender.SendAsync, (e) metrics emission. UserRegisteredConsumer is special — it WRITES to IUserContactCache before/after sending welcome email. LessonCompletedConsumer is gated by FeatureFlag `Notifications.LessonProgressEmail` (default false → drop with reason=disabled). CourseArchivedConsumer Phase 1 sends ONLY to instructor (no fan-out). ContentProcessing consumers use new UploadedBy field from T1. Wire all consumers via `x.AddConsumers(Assembly.GetExecutingAssembly())` in Program.cs along with MassTransit retry config (`Immediate(3); Interval(3, 30s)`), Redis registration via `builder.AddRedisClient(\"redis\")`, options validation, OTEL meter `LMS.NotificationWorker`.",
+      "agent": "frontend",
+      "title": "Feature: enrollment + progress (hooks + EnrollButton + MyCoursesPage + DashboardPage)",
+      "spec": "Per contracts.md §4. Implement `features/enrollment/api/use-enrollments.ts` (useMyEnrollments, useEnroll, useCancelEnrollment). EnrollButton.tsx: on 409 PAYMENT_REQUIRED, show shadcn dialog 'Payment required (Phase 2)'; on 201 navigate to course detail. MyCoursesPage.tsx: lists enrollments joined with progress. Implement `features/progress/api/use-progress.ts` (useMyProgress, useCourseProgress, useCompleteLesson; useCompleteLesson onSuccess invalidates progress + enrollment keys). ProgressBar.tsx component (uses shadcn Progress). DashboardPage.tsx: dashboard combining MyCoursesPage + recent activity (uses both hooks). Hook into router replacing placeholders.",
       "files": [
-        "src/services/LMS.NotificationWorker/Consumers/NotificationConsumerBase.cs",
-        "src/services/LMS.NotificationWorker/Consumers/UserRegisteredConsumer.cs",
-        "src/services/LMS.NotificationWorker/Consumers/UserDeactivatedConsumer.cs",
-        "src/services/LMS.NotificationWorker/Consumers/CoursePublishedConsumer.cs",
-        "src/services/LMS.NotificationWorker/Consumers/CourseArchivedConsumer.cs",
-        "src/services/LMS.NotificationWorker/Consumers/UserEnrolledConsumer.cs",
-        "src/services/LMS.NotificationWorker/Consumers/EnrollmentCancelledConsumer.cs",
-        "src/services/LMS.NotificationWorker/Consumers/LessonCompletedConsumer.cs",
-        "src/services/LMS.NotificationWorker/Consumers/CourseCompletedConsumer.cs",
-        "src/services/LMS.NotificationWorker/Consumers/ContentProcessingCompletedConsumer.cs",
-        "src/services/LMS.NotificationWorker/Consumers/ContentProcessingFailedConsumer.cs",
-        "src/services/LMS.NotificationWorker/Consumers/AssessmentSubmittedConsumer.cs",
-        "src/services/LMS.NotificationWorker/Consumers/CertificateIssuedConsumer.cs",
-        "src/services/LMS.NotificationWorker/Program.cs",
-        "src/services/LMS.NotificationWorker/Observability/NotificationMetrics.cs"
+        "frontend/src/features/enrollment/api/use-enrollments.ts",
+        "frontend/src/features/enrollment/components/EnrollButton.tsx",
+        "frontend/src/features/enrollment/pages/MyCoursesPage.tsx",
+        "frontend/src/features/progress/api/use-progress.ts",
+        "frontend/src/features/progress/components/ProgressBar.tsx",
+        "frontend/src/features/dashboard/pages/DashboardPage.tsx",
+        "frontend/src/app/router.tsx"
       ],
-      "depends_on": ["T1", "T3", "T4"],
-      "branch": "feature/notif-T6-consumers",
-      "worktree": ".claude-worktrees/T6-notif-consumers",
-      "timeout_minutes": 90,
+      "depends_on": ["T4"],
+      "branch": "feature/fe-T6-enrollment-progress",
+      "worktree": ".claude-worktrees/T6-fe-enroll",
+      "timeout_minutes": 70,
       "acceptance": [
-        "dotnet build src/services/LMS.NotificationWorker/LMS.NotificationWorker.csproj"
+        "cd frontend && npx tsc --noEmit"
       ]
     },
     {
       "id": "T7",
-      "agent": "haiku-helper",
-      "title": "Unit tests for primitives + per-template fixtures",
-      "spec": "Create new test project `tests/LMS.NotificationWorker.UnitTests/`. Add to LMS.slnx. References LMS.NotificationWorker. Tests per contracts.md section 7 unit list: ScribanTemplateRenderer auto-encoding test (passes `<script>` in input, asserts encoded in HTML output); language fallback test; RedisIdempotencyStore TryClaim NX semantics (use Testcontainers Redis or StackExchange.Redis Memory fake); per-template render smoke (one xunit Theory case per templateId, asserts subject + body non-empty + contains key field).",
+      "agent": "frontend",
+      "title": "Feature: content (hooks + VideoPlayer + PdfViewer + ScormPlayer + UploadDialog + LessonPage + player-store)",
+      "spec": "Per contracts.md §4 + §5. Implement `features/content/api/use-content.ts` (useContentStream, useReportContentProgress, useUploadContent — three-step upload: init → S3 PUT → process). Implement player-store.ts Zustand (currentLessonId, isPlaying, volume, playbackRate, lastReportedAt). VideoPlayer.tsx per docs/frontend.md (heartbeat 30s via useReportContentProgress; honors resumePositionSeconds). PdfViewer.tsx (native iframe to signed URL — see Open Decision #5). ScormPlayer.tsx per docs/frontend.md sandbox+postMessage bridge calling useCompleteLesson on `cmi.core.lesson_status=passed|completed`. UploadDialog.tsx (instructor) using useUploadContent + RHF + Zod (file required, contentType enum, lessonId required). LessonPage.tsx switches player by contentType. ContentUploadPage.tsx wraps UploadDialog. Wire router.",
       "files": [
-        "tests/LMS.NotificationWorker.UnitTests/LMS.NotificationWorker.UnitTests.csproj",
-        "tests/LMS.NotificationWorker.UnitTests/ScribanTemplateRendererTests.cs",
-        "tests/LMS.NotificationWorker.UnitTests/RedisIdempotencyStoreTests.cs",
-        "tests/LMS.NotificationWorker.UnitTests/TemplateRenderSmokeTests.cs",
-        "LMS.slnx"
+        "frontend/src/features/content/api/use-content.ts",
+        "frontend/src/features/content/store/player-store.ts",
+        "frontend/src/features/content/components/VideoPlayer.tsx",
+        "frontend/src/features/content/components/PdfViewer.tsx",
+        "frontend/src/features/content/components/ScormPlayer.tsx",
+        "frontend/src/features/content/components/UploadDialog.tsx",
+        "frontend/src/features/content/pages/LessonPage.tsx",
+        "frontend/src/features/content/pages/ContentUploadPage.tsx",
+        "frontend/src/app/router.tsx"
       ],
-      "depends_on": ["T6"],
-      "branch": "feature/notif-T7-unit-tests",
-      "worktree": ".claude-worktrees/T7-notif-unit",
-      "timeout_minutes": 45,
+      "depends_on": ["T4", "T6"],
+      "branch": "feature/fe-T7-content",
+      "worktree": ".claude-worktrees/T7-fe-content",
+      "timeout_minutes": 80,
       "acceptance": [
-        "dotnet test tests/LMS.NotificationWorker.UnitTests/LMS.NotificationWorker.UnitTests.csproj"
+        "cd frontend && npx tsc --noEmit"
       ]
     },
     {
       "id": "T8",
-      "agent": "tester",
-      "title": "Integration tests with RabbitMQ + Redis + MailHog + harness",
-      "spec": "Add `tests/LMS.IntegrationTests/NotificationWorker/` per contracts.md section 7. Use Testcontainers for RabbitMQ + Redis + MailHog (mailhog/mailhog:v1.0.1, expose 8025 for API, 1025 for SMTP). MassTransit InMemoryHarness wraps the worker host. Cover: (a) one-shot send for each of the 12 events except LessonCompleted (= no-send); (b) idempotency: re-publish same message → only one mail in MailHog; (c) UserRegistered populates contact cache → subsequent UserEnrolled for same (TenantId,UserId) finds cached email; (d) cache-miss path: publish UserEnrolled for unknown user → no mail, metric dropped++; (e) tenant tag propagation: two events for distinct TenantIds → assert MailHog has two mails AND OTEL test exporter has matching tenant_id tags; (f) LessonCompleted with feature flag false → no send; with flag true → send. Use MailHog HTTP API (`GET /api/v2/messages`) for assertions. ArchitectureTests in `tests/LMS.ArchitectureTests/`: NotificationWorker doesn't reference EF Core; doesn't reference any other LMS.*Service.* project; no HttpClient with BaseAddress targeting LMS service. ContractTests: regression test that compiles a hard-coded list of consumed events matching docs/events.md routing table.",
+      "agent": "frontend",
+      "title": "Feature: assessment (hooks + QuizRunner + QuestionCard + ResultPanel + QuizPage + quiz-store)",
+      "spec": "Per contracts.md §4 + §5. Implement `features/assessment/api/use-assessments.ts` (useStartAssessmentSession, useSubmitAssessment, useMyAttempts). quiz-store.ts Zustand (sessionId, currentQuestionIndex, draftAnswers Record, startedAt, expiresAt; setAnswer, next, prev, reset). QuestionCard.tsx renders MCQ / multi-select / free-text per QuestionDto.type. QuizRunner.tsx orchestrates: fetch session via mutation onSubmit of useStartAssessmentSession, render QuestionCards stepper, on submit dispatch useSubmitAssessment with draftAnswers. ResultPanel.tsx shows AssessmentResultDto + retry CTA when `passed=false`. QuizPage.tsx wraps QuizRunner with ProtectedRoute. Wire router.",
       "files": [
-        "tests/LMS.IntegrationTests/NotificationWorker/Fixtures/NotificationWorkerFactory.cs",
-        "tests/LMS.IntegrationTests/NotificationWorker/Fixtures/MailHogClient.cs",
-        "tests/LMS.IntegrationTests/NotificationWorker/UserRegisteredFlowTests.cs",
-        "tests/LMS.IntegrationTests/NotificationWorker/EnrollmentFlowTests.cs",
-        "tests/LMS.IntegrationTests/NotificationWorker/CompletionAndCertificateTests.cs",
-        "tests/LMS.IntegrationTests/NotificationWorker/IdempotencyTests.cs",
-        "tests/LMS.IntegrationTests/NotificationWorker/CacheMissTests.cs",
-        "tests/LMS.IntegrationTests/NotificationWorker/TenantTagPropagationTests.cs",
-        "tests/LMS.IntegrationTests/NotificationWorker/FeatureFlagTests.cs",
-        "tests/LMS.ArchitectureTests/NotificationWorkerArchitectureTests.cs",
-        "tests/LMS.ContractTests/NotificationWorkerConsumerListTests.cs"
+        "frontend/src/features/assessment/api/use-assessments.ts",
+        "frontend/src/features/assessment/store/quiz-store.ts",
+        "frontend/src/features/assessment/components/QuestionCard.tsx",
+        "frontend/src/features/assessment/components/QuizRunner.tsx",
+        "frontend/src/features/assessment/components/ResultPanel.tsx",
+        "frontend/src/features/assessment/pages/QuizPage.tsx",
+        "frontend/src/app/router.tsx"
       ],
-      "depends_on": ["T6"],
-      "branch": "feature/notif-T8-integration",
-      "worktree": ".claude-worktrees/T8-notif-integration",
-      "timeout_minutes": 90,
+      "depends_on": ["T4"],
+      "branch": "feature/fe-T8-assessment",
+      "worktree": ".claude-worktrees/T8-fe-assessment",
+      "timeout_minutes": 70,
       "acceptance": [
-        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~NotificationWorker",
-        "dotnet test tests/LMS.ArchitectureTests/LMS.ArchitectureTests.csproj --filter FullyQualifiedName~NotificationWorker",
-        "dotnet test tests/LMS.ContractTests/LMS.ContractTests.csproj --filter FullyQualifiedName~NotificationWorker"
+        "cd frontend && npx tsc --noEmit"
       ]
     },
     {
       "id": "T9",
+      "agent": "frontend",
+      "title": "Feature: certificate (hooks + CertificateCard + MyCertificates + public VerifyPage)",
+      "spec": "Per contracts.md §4. Implement `features/certificate/api/use-certificates.ts` (useMyCertificates uses apiClient; useCertificate uses apiClient; useVerifyCertificate uses publicApiClient — no auth header). CertificateCard.tsx (issue date, course title, download PDF link, verify URL with copy button). MyCertificatesPage.tsx (auth required). VerifyPage.tsx (public; reads $code route param; shows valid/invalid + cert details). Wire router.",
+      "files": [
+        "frontend/src/features/certificate/api/use-certificates.ts",
+        "frontend/src/features/certificate/components/CertificateCard.tsx",
+        "frontend/src/features/certificate/pages/MyCertificatesPage.tsx",
+        "frontend/src/features/certificate/pages/VerifyPage.tsx",
+        "frontend/src/app/router.tsx"
+      ],
+      "depends_on": ["T4"],
+      "branch": "feature/fe-T9-certificate",
+      "worktree": ".claude-worktrees/T9-fe-cert",
+      "timeout_minutes": 50,
+      "acceptance": [
+        "cd frontend && npx tsc --noEmit"
+      ]
+    },
+    {
+      "id": "T10",
+      "agent": "frontend",
+      "title": "LandingPage + NotFoundPage + final router wiring + production build smoke",
+      "spec": "Implement public LandingPage (hero + 'Browse courses' CTA → /courses) and NotFoundPage. Replace any remaining placeholder pages in router.tsx. Run `npm run build` and ensure dist/ produces with no errors. Run `npx tsc --noEmit`. Run `npm run lint` (configure ESLint flat config in T1; if missing, add minimal config here).",
+      "files": [
+        "frontend/src/features/landing/pages/LandingPage.tsx",
+        "frontend/src/features/notfound/pages/NotFoundPage.tsx",
+        "frontend/src/app/router.tsx",
+        "frontend/eslint.config.js"
+      ],
+      "depends_on": ["T5", "T6", "T7", "T8", "T9"],
+      "branch": "feature/fe-T10-landing-build",
+      "worktree": ".claude-worktrees/T10-fe-landing",
+      "timeout_minutes": 40,
+      "acceptance": [
+        "cd frontend && npx tsc --noEmit",
+        "cd frontend && npm run build",
+        "cd frontend && npm run lint"
+      ]
+    },
+    {
+      "id": "T11",
+      "agent": "gateway-ops",
+      "title": "AppHost: register frontend npm app + verify gateway CORS + Keycloak realm lms-spa client",
+      "spec": "Per contracts.md §7. Edit src/LMS.AppHost/Program.cs: replace the commented frontend block with active `AddNpmApp('frontend', '../../frontend', 'dev')` + WithReference(gateway) + WaitFor(gateway) + four VITE_* env vars + WithHttpEndpoint(5173) + WithExternalHttpEndpoints. Verify gateway CORS allowed origins includes http://localhost:5173 — if missing, add to gateway appsettings.json `Cors:AllowedOrigins`. Verify keycloak realm file (locate at repo `keycloak/lms-realm.json` or `src/LMS.AppHost/keycloak/lms-realm.json`) has `lms-spa` public client with redirectUris ['http://localhost:5173/*'] and webOrigins ['http://localhost:5173'] and PKCE S256; if missing, add per docs/frontend.md §Keycloak client registration. Add a gateway integration test `tests/LMS.IntegrationTests/Gateway/CorsTests.cs` asserting `OPTIONS /api/courses` from Origin http://localhost:5173 returns 204 with Access-Control-Allow-Origin echoed and Access-Control-Allow-Credentials true.",
+      "files": [
+        "src/LMS.AppHost/Program.cs",
+        "src/gateway/LMS.Gateway/appsettings.json",
+        "src/gateway/LMS.Gateway/appsettings.Development.json",
+        "tests/LMS.IntegrationTests/Gateway/CorsTests.cs"
+      ],
+      "depends_on": ["T1"],
+      "branch": "feature/fe-T11-apphost-cors",
+      "worktree": ".claude-worktrees/T11-fe-apphost",
+      "timeout_minutes": 35,
+      "acceptance": [
+        "dotnet build src/LMS.AppHost/LMS.AppHost.csproj",
+        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~Gateway.CorsTests"
+      ]
+    },
+    {
+      "id": "T12",
+      "agent": "haiku-helper",
+      "title": "Vitest unit tests for apiClient, useAuth, ProtectedRoute, query hooks, Zod schemas",
+      "spec": "Per contracts.md §9 unit list. Configure vitest in frontend/vite.config.ts (test env: jsdom). Add `frontend/tests/setup.ts`. Write tests: (1) apiClient interceptors — token attach + 401 redirect (mock keycloak module). (2) publicApiClient — no Authorization header attached. (3) useAuth shape (mock keycloak global). (4) ProtectedRoute — three branches. (5) For each feature hook (use-courses, use-enrollments, use-content, use-progress, use-assessments, use-certificates) one happy-path test verifying query key shape + URL called (use msw or axios-mock-adapter). (6) Zod schemas reject invalid + accept valid (CreateCourseForm, UploadDialog).",
+      "files": [
+        "frontend/vite.config.ts",
+        "frontend/tests/setup.ts",
+        "frontend/src/lib/api-client.test.ts",
+        "frontend/src/features/auth/hooks/useAuth.test.ts",
+        "frontend/src/features/auth/components/ProtectedRoute.test.tsx",
+        "frontend/src/features/courses/api/use-courses.test.ts",
+        "frontend/src/features/enrollment/api/use-enrollments.test.ts",
+        "frontend/src/features/content/api/use-content.test.ts",
+        "frontend/src/features/progress/api/use-progress.test.ts",
+        "frontend/src/features/assessment/api/use-assessments.test.ts",
+        "frontend/src/features/certificate/api/use-certificates.test.ts",
+        "frontend/src/features/courses/components/CreateCourseForm.test.tsx"
+      ],
+      "depends_on": ["T10"],
+      "branch": "feature/fe-T12-vitest",
+      "worktree": ".claude-worktrees/T12-fe-vitest",
+      "timeout_minutes": 60,
+      "acceptance": [
+        "cd frontend && npx vitest run"
+      ]
+    },
+    {
+      "id": "T13",
+      "agent": "tester",
+      "title": "Architecture + component tests (axios uniqueness, no localStorage tokens, no inline style, RTL behavior)",
+      "spec": "Per contracts.md §9 architecture + component lists. Architecture vitest tests under `frontend/tests/architecture/`: (a) only `src/lib/api-client.ts` contains `axios.create(`; grep all .ts/.tsx files. (b) no file under src/ writes to localStorage/sessionStorage with a token-shaped key (regex over file contents). (c) no `style={{` in src/**/*.tsx. (d) no `apiClient.(get|post|put|delete|patch)` outside `src/features/**/api/**` and `src/lib/**` (mutations may be invoked elsewhere via the hook return). Component tests (React Testing Library): CourseCard renders title + enroll CTA; EnrollButton handles 409 PAYMENT_REQUIRED branch (shows dialog); QuizRunner reads draftAnswers from Zustand; VideoPlayer fires heartbeat at 30s with vi.useFakeTimers; ProtectedRoute role-mismatch → AccessDenied.",
+      "files": [
+        "frontend/tests/architecture/no-foreign-axios.test.ts",
+        "frontend/tests/architecture/no-localstorage-token.test.ts",
+        "frontend/tests/architecture/no-inline-style.test.ts",
+        "frontend/tests/architecture/api-call-locality.test.ts",
+        "frontend/src/features/courses/components/CourseCard.test.tsx",
+        "frontend/src/features/enrollment/components/EnrollButton.test.tsx",
+        "frontend/src/features/assessment/components/QuizRunner.test.tsx",
+        "frontend/src/features/content/components/VideoPlayer.test.tsx"
+      ],
+      "depends_on": ["T10"],
+      "branch": "feature/fe-T13-arch-tests",
+      "worktree": ".claude-worktrees/T13-fe-arch",
+      "timeout_minutes": 60,
+      "acceptance": [
+        "cd frontend && npx vitest run"
+      ]
+    },
+    {
+      "id": "T14",
       "agent": "security-auditor",
-      "title": "Tenant + PII audit on worker",
-      "spec": "Run /audit-tenant scoped to src/services/LMS.NotificationWorker. Specific checks: (a) every consumer reads TenantId from the message and stamps it on logs/metrics; (b) idempotency keys include TenantId OR EventId (which is globally unique) — no cross-tenant collisions possible; (c) UserContactCache keys include TenantId prefix; (d) Scriban templates auto-encode user input (test `<script>` injection); (e) no JWT / authorization header parsing exists in worker; (f) no HttpClient with BaseAddress to other LMS services; (g) SmtpOptions password / SmtpOptions credentials never logged (check ILogger usages); (h) MailHog only used in Development environment — production must not emit to it. Produce findings; T11 reviewer must address any HIGH severity items before merge.",
+      "title": "Frontend security audit: token storage, header forgery, JWT lifecycle, CSP",
+      "spec": "Audit scope: frontend/. Specific checks: (1) keycloak.token NEVER written to localStorage/sessionStorage/IndexedDB — confirmed by static analysis + manual code review. (2) apiClient is the only axios instance; refresh-before-send via updateToken(30) is in place; 401 → login. (3) `silent-check-sso.html` is empty/minimal and served same-origin. (4) No client-side computation of tenant_id — always read from Keycloak token claims (verify no hardcoded tenant in src). (5) ScormPlayer iframe sandbox flags include allow-scripts only as required; postMessage origin check is `event.origin !== window.location.origin`. (6) No secret-bearing env var leaks in client bundle (search dist for any non-VITE_* secret pattern). (7) CSP header recommendation captured for production hosting in T15 docs (advisory). (8) verify route uses publicApiClient (no Bearer) and is guarded behind no role. Produce findings report; HIGH severity blocks T15.",
       "files": [],
-      "depends_on": ["T8"],
-      "branch": "feature/notif-T9-audit",
-      "worktree": ".claude-worktrees/T9-notif-audit",
+      "depends_on": ["T12", "T13"],
+      "branch": "feature/fe-T14-audit",
+      "worktree": ".claude-worktrees/T14-fe-audit",
       "timeout_minutes": 30,
       "acceptance": [
         "test -d .claude/audits || mkdir -p .claude/audits"
       ]
     },
     {
-      "id": "T10",
+      "id": "T15",
       "agent": "reviewer",
-      "title": "Final review against contracts.md + absolute rules",
-      "spec": "Run /code-reviewer on T1–T9 changes. Mandatory: (1) NotificationWorker has NO DbContext / EF Core dep; (2) NO new event records added beyond T1's additive UploadedBy; (3) NO direct HTTP between services (no HttpClient targeting LMS); (4) MailKit used (not SendGrid SDK directly Phase 1); (5) all 12 consumer classes exist and are registered; (6) idempotency wired on every consumer; (7) Aspire resource name 'notifications' matches docs/architecture.md; (8) feature flag 'Notifications.LessonProgressEmail' default false; (9) every email log entry includes TenantId; (10) no JWT validation in worker. Address all HIGH-severity findings from T9. Block merge on contract drift.",
+      "title": "Final review against contracts.md + frontend absolute rules",
+      "spec": "Run code-reviewer on T1–T14 changes. Mandatory checks: (1) NO JWT/refresh-token in localStorage/sessionStorage; (2) every API call goes through `apiClient` (or `publicApiClient` for /verify only); (3) NO direct fetch in components — only via TanStack Query hooks; (4) tenantId never hardcoded — only from useAuth; (5) every protected route uses <ProtectedRoute>; (6) all form state via React Hook Form (no controlled useState forms); (7) no inline styles — Tailwind only; (8) Aspire AddNpmApp present and uses gateway endpoint env var; (9) gateway CORS includes 5173; (10) keycloak realm has lms-spa client; (11) all 6 feature slices present per contracts.md §1; (12) all 13 API hooks per contracts.md §4 present with locked signatures; (13) Zustand stores limited to UI state per §5. Address all HIGH from T14. Block merge on contract drift.",
       "files": [],
-      "depends_on": ["T7", "T9"],
-      "branch": "feature/notif-T10-review",
-      "worktree": ".claude-worktrees/T10-notif-review",
-      "timeout_minutes": 30,
+      "depends_on": ["T11", "T14"],
+      "branch": "feature/fe-T15-review",
+      "worktree": ".claude-worktrees/T15-fe-review",
+      "timeout_minutes": 40,
       "acceptance": [
         "dotnet build LMS.slnx",
-        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~NotificationWorker"
+        "cd frontend && npm run build && npx vitest run"
       ]
     },
     {
-      "id": "T11",
+      "id": "T16",
       "agent": "docs-writer",
-      "title": "Sync docs/notification.md + docs/events.md",
-      "spec": "Update docs/notification.md to list all 12 Phase-1 consumers (currently lists only 4) per contracts.md section 2 table. Reflect MailKit + Scriban + Redis idempotency choices. Document Phase-1 cache-miss-drop strategy and the 3 deferred items (Vietnamese templates, course-archived fan-out, per-tenant rate limit). Update docs/events.md routing table to include UploadedBy field on ContentProcessingCompleted/Failed and ensure CertificateIssued is listed (already locked in current events.md). Add operations runbook section covering: (a) DLQ inspection (`_error` queue), (b) MailHog UI access in dev (port 8025), (c) feature flag toggle for lesson-progress emails.",
+      "title": "Sync docs/frontend.md with shipped code + add operations runbook",
+      "spec": "Update docs/frontend.md to match shipped reality: confirm declarative router style, list final shadcn primitives shipped, note Tailwind v4, document the publicApiClient pattern for /verify, document the EnrollButton 409 flow. Add an 'Operations' section: (a) running locally via Aspire (frontend launches on :5173), (b) running standalone via `cd frontend && npm run dev`, (c) Keycloak realm import path, (d) production hosting note (Phase 2 deferred), (e) feature-flag-style toggles for vi/i18n (Phase 2). Update README root with 'frontend' run instructions.",
       "files": [
-        "docs/notification.md",
-        "docs/events.md"
+        "docs/frontend.md",
+        "README.md"
       ],
-      "depends_on": ["T10"],
-      "branch": "feature/notif-T11-docs",
-      "worktree": ".claude-worktrees/T11-notif-docs",
+      "depends_on": ["T15"],
+      "branch": "feature/fe-T16-docs",
+      "worktree": ".claude-worktrees/T16-fe-docs",
       "timeout_minutes": 25,
       "acceptance": [
-        "test -f docs/notification.md"
+        "test -f docs/frontend.md"
       ]
     }
   ]

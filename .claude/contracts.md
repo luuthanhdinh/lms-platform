@@ -1,374 +1,395 @@
 # Contracts (locked — do not deviate)
 _Hash: <to be filled by orchestrator>_
 
-Feature: **LMS.NotificationWorker** (Phase 1, service #9)
-Type: **Worker** (no HTTP, no DB) — pure event consumer
-Project layout: **single-project** (worker has no Domain/Api/Migrator split — no DB, no endpoints)
-Path: `src/services/LMS.NotificationWorker/`
-Email provider: **MailKit SMTP** (Phase 1) behind `IEmailSender` abstraction
-Templating: **Scriban** (`.sbn` files embedded as resources)
-Dedupe store: **Redis** (`Aspire.StackExchange.Redis`) — composite key per `(MessageId, ConsumerType)`
-Aspire resource name: `notifications` (matches `docs/architecture.md` line 55)
+Feature: **LMS React Frontend** (Phase 1, service #10)
+Type: **SPA** — Vite + React 19 + TypeScript
+Path: `frontend/`
+Aspire resource name: `frontend` (registered via `AddNpmApp`, port 5173, external HTTP)
+Auth: Keycloak-js (PKCE S256, `check-sso`, **in-memory token only — never localStorage**)
+HTTP transport: Axios via single `apiClient` → YARP gateway (`VITE_API_BASE_URL`)
 
-ADR / docs references:
-- Multi-tenancy rule: every consumer must read `TenantId` from the message
-  (no DbContext to filter — the worker is stateless)
-- No-direct-HTTP rule: worker MUST NOT call other LMS services over HTTP;
-  every datum it needs must already be on the inbound event
-- JWT trust boundary: worker has no inbound HTTP — N/A
-- `docs/notification.md`: lists Phase 1 consumers + SMTP/MailKit choice
-- `docs/events.md` Phase-1 routing table: NotificationWorker is consumer for
-  `UserRegistered`, `UserDeactivated`, `CoursePublished`, `CourseArchived`,
-  `UserEnrolled`, `EnrollmentCancelled`, `LessonCompleted`, `CourseCompleted`,
-  `ContentProcessingCompleted`, `ContentProcessingFailed`,
-  `AssessmentSubmitted`, `CertificateIssued`
+Reference docs (read order satisfied): `docs/architecture.md` § AppHost+Gateway,
+`docs/frontend.md` (full), `docs/services/{course,content,enrollment,progress,assessment}.md`,
+`docs/services/gateway.md` (CORS + JWT), `.claude/CLAUDE.md` frontend rules.
 
-> **Decision conflict (Open Decision #1):** `docs/notification.md` lists
-> only 4 Phase-1 consumers (`UserRegistered`, `UserEnrolled`,
-> `CourseCompleted`, `CredentialIssued`) while `docs/events.md` routing
-> table lists 12. Plan locks **events.md** as source of truth (it is
-> the authoritative cross-cutting reference). `docs/notification.md`
-> will be updated by `docs-writer` in T11. `CredentialIssued` is Phase 4
-> per the Certificate-feature contracts split — Phase 1 uses
-> `CertificateIssued` instead.
+> Supersedes the prior NotificationWorker contracts file (worker is shipped as service #9).
 
 ---
 
-## 1. Project layout (locked — single project, no DB)
+## 1. Project layout (locked)
 
 ```
-src/services/LMS.NotificationWorker/
-  LMS.NotificationWorker.csproj
-  Program.cs                          # Host.CreateApplicationBuilder, MassTransit, MailKit, Redis
-  Consumers/
-    UserRegisteredConsumer.cs
-    UserDeactivatedConsumer.cs
-    CoursePublishedConsumer.cs
-    CourseArchivedConsumer.cs
-    UserEnrolledConsumer.cs
-    EnrollmentCancelledConsumer.cs
-    LessonCompletedConsumer.cs        # gated by feature flag (digest-only Phase 2; Phase 1 = no-op)
-    CourseCompletedConsumer.cs
-    ContentProcessingCompletedConsumer.cs
-    ContentProcessingFailedConsumer.cs
-    AssessmentSubmittedConsumer.cs
-    CertificateIssuedConsumer.cs
-  Email/
-    IEmailSender.cs                   # abstraction
-    SmtpEmailSender.cs                # MailKit impl
-    EmailMessage.cs                   # record (To, Subject, BodyHtml, BodyText, ReplyTo?)
-    EmailSendResult.cs
-  Templates/
-    ITemplateRenderer.cs
-    ScribanTemplateRenderer.cs
-    Models/
-      UserRegisteredModel.cs          # one DTO per template
-      UserEnrolledModel.cs
-      ...
-    Sbn/                              # .sbn files (embedded resources)
-      user-registered.subject.sbn
-      user-registered.html.sbn
-      user-registered.text.sbn
-      ... (subject/html/text trio per template)
-  Idempotency/
-    IIdempotencyStore.cs
-    RedisIdempotencyStore.cs          # SET NX EX with 7-day TTL
-  Options/
-    SmtpOptions.cs                    # Host, Port, Username, Password, FromAddress, FromName, UseStartTls
-    NotificationOptions.cs            # FrontendBaseUrl, VerifyBaseUrl, SupportEmail, IdempotencyTtlDays
-  Properties/launchSettings.json      # Aspire-managed; no exposed port
+frontend/
+├── package.json
+├── vite.config.ts
+├── tailwind.config.ts
+├── postcss.config.js
+├── tsconfig.json
+├── tsconfig.app.json
+├── tsconfig.node.json
+├── index.html
+├── public/
+│   └── silent-check-sso.html         # Keycloak silent SSO iframe
+├── .env.example                      # documents required VITE_* vars
+├── src/
+│   ├── app/
+│   │   ├── main.tsx                  # Keycloak.init then ReactDOM.createRoot
+│   │   ├── providers.tsx             # QueryClientProvider, RouterProvider
+│   │   ├── router.tsx                # TanStack Router tree (see §3)
+│   │   └── RootLayout.tsx            # shell: header, nav, <Outlet/>
+│   ├── lib/
+│   │   ├── keycloak.ts               # singleton (in-memory only)
+│   │   ├── api-client.ts             # axios singleton + JWT interceptor + 401 redirect
+│   │   ├── query-client.ts           # QueryClient defaults (staleTime, retry)
+│   │   └── env.ts                    # typed import.meta.env access
+│   ├── types/
+│   │   └── index.ts                  # mirror docs/frontend.md §"TypeScript types"
+│   ├── components/
+│   │   ├── ui/                       # shadcn/ui primitives (button, card, input, dialog, ...)
+│   │   ├── layout/                   # Header, NavBar, UserMenu
+│   │   └── feedback/                 # Skeleton, ErrorBanner, EmptyState
+│   ├── features/
+│   │   ├── auth/
+│   │   │   ├── components/ProtectedRoute.tsx
+│   │   │   ├── hooks/useAuth.ts
+│   │   │   └── hooks/useCurrentUser.ts
+│   │   ├── courses/
+│   │   │   ├── api/use-courses.ts
+│   │   │   ├── components/{CourseCard,CourseSyllabus,CreateCourseForm,PublishButton}.tsx
+│   │   │   └── pages/{CataloguePage,CourseDetailPage,CourseEditorPage}.tsx
+│   │   ├── enrollment/
+│   │   │   ├── api/use-enrollments.ts
+│   │   │   ├── components/EnrollButton.tsx
+│   │   │   └── pages/MyCoursesPage.tsx
+│   │   ├── content/
+│   │   │   ├── api/use-content.ts
+│   │   │   ├── components/{VideoPlayer,PdfViewer,ScormPlayer,UploadDialog}.tsx
+│   │   │   ├── pages/LessonPage.tsx
+│   │   │   └── store/player-store.ts          # Zustand
+│   │   ├── progress/
+│   │   │   ├── api/use-progress.ts
+│   │   │   └── components/ProgressBar.tsx
+│   │   ├── assessment/
+│   │   │   ├── api/use-assessments.ts
+│   │   │   ├── components/{QuizRunner,QuestionCard,ResultPanel}.tsx
+│   │   │   └── pages/QuizPage.tsx
+│   │   └── certificate/
+│   │       ├── api/use-certificates.ts
+│   │       ├── components/CertificateCard.tsx
+│   │       └── pages/{MyCertificatesPage,VerifyPage}.tsx
+│   └── styles/
+│       └── globals.css               # Tailwind v4 entry + CSS vars
+└── tests/                            # vitest unit; Playwright optional Phase 2
+    └── setup.ts
 ```
 
-Project references:
-- `LMS.ServiceDefaults`
-- `LMS.Contracts`
-- `LMS.SharedKernel` (for `Result<T>` if needed; no `TenantEntity` since no DB)
+NPM dependencies (locked versions are best-of-class major; lockfile generated by T2):
 
-NuGet:
-- `MassTransit` + `MassTransit.RabbitMQ`
-- `MailKit` (3.x) + `MimeKit`
-- `Scriban`
-- `Aspire.StackExchange.Redis`
-- `Microsoft.FeatureManagement`
-- `Polly` (transitive via `MassTransit`; explicit dep for SMTP retry)
-
----
-
-## 2. Events consumed → actions (LOCKED)
-
-All twelve consumers listen to records already defined in `LMS.Contracts/`
-(no new event records are introduced by NotificationWorker).
-
-| # | Event (existing in `LMS.Contracts`) | Template id | Recipient | Action / payload mapping |
-|---|---|---|---|---|
-| 1 | `UserRegistered` | `user-registered` | `Email` (on event) | Welcome email; CTA → `{FrontendBaseUrl}/onboarding` |
-| 2 | `UserDeactivated` | `user-deactivated` | resolved via `UserId` → **OPEN DECISION #2** (no email on event; needs lookup) | Account-deactivation notice |
-| 3 | `CoursePublished` | `course-published` | instructor (`InstructorId`) — **OPEN DECISION #2** | Confirmation that course is live; CTA → instructor course page |
-| 4 | `CourseArchived` | `course-archived` | instructor + active enrolees — **OPEN DECISION #3** (fan-out) | Phase 1 stub: instructor only |
-| 5 | `UserEnrolled` | `user-enrolled` | learner (`UserId`) | Enrollment confirmation; CTA → `{FrontendBaseUrl}/courses/{CourseId}` |
-| 6 | `EnrollmentCancelled` | `enrollment-cancelled` | learner (`UserId`) | Cancellation notice |
-| 7 | `LessonCompleted` | none Phase 1 | — | NO-OP in Phase 1 (per `notification.md`) — consumer registered but exits early; logged for observability. Gated by feature flag `Notifications.LessonProgressEmail` (default `false`). |
-| 8 | `CourseCompleted` | `course-completed` | learner (`UserId`) | Congratulations email; CTA → certificate page once `CertificateIssued` lands (separate email) |
-| 9 | `ContentProcessingCompleted` | `content-ready` | uploader (`UploadedBy` is NOT on this event — **OPEN DECISION #4**) | Instructor "your video is ready" notice |
-| 10 | `ContentProcessingFailed` | `content-failed` | uploader — same OPEN DECISION #4 | Instructor "processing failed" + reason |
-| 11 | `AssessmentSubmitted` | `assessment-submitted` | learner (`UserId`) | Result email (Score / Passed / failed → retry CTA) |
-| 12 | `CertificateIssued` | `certificate-issued` | learner (`UserId`) | Certificate email; rendered URL: `{VerifyBaseUrl}/{VerificationCode}`; subject contains `CertificateNumber` |
-
-### Email recipient resolution (Phase 1 strategy — locked)
-
-Workers **must not** make HTTP calls to IdentityService. For events that
-don't already carry an email address, Phase 1 uses a **best-effort fallback**:
-
-- `UserRegistered`: email is **on the event** → trivial.
-- `UserEnrolled`, `EnrollmentCancelled`, `CourseCompleted`,
-  `AssessmentSubmitted`, `CertificateIssued`, `UserDeactivated`,
-  `CoursePublished`, `CourseArchived`, `ContentProcessingCompleted`,
-  `ContentProcessingFailed`: email NOT on event.
-
-→ **Locked Phase-1 strategy:** Maintain an in-memory + Redis-backed
-`IUserContactCache` populated by the `UserRegisteredConsumer`
-(writes `(TenantId, UserId) → Email + DisplayName`). Other consumers
-read from this cache. **Cache miss → log warning + drop email** (no DLQ).
-This is acceptable Phase 1 because every active user passes through
-`UserRegistered`. Long-term fix tracked as Open Decision #2.
-
-Cache key: `notif:user:{TenantId}:{UserId}` → JSON `{Email, DisplayName, Language}`.
-TTL: 90 days (sliding on read).
-
-### Idempotency (locked)
-
-For every consumer, the dedupe key is:
-- If event has `EventId` field → `notif:dedupe:{ConsumerType}:{EventId}`
-- Otherwise (e.g. `LessonCompleted`, `UserEnrolled`, `CourseCompleted`,
-  `AssessmentSubmitted`) → composite `notif:dedupe:{ConsumerType}:{stable-hash}`
-  where `stable-hash = SHA256(canonicalize(MessageHeaders.MessageId ?? message-bytes))`.
-
-Strategy: `SET NX EX 7d` on Redis. If key exists → consumer returns
-without sending. Idempotency record is stored **before** SMTP send;
-SMTP failure raises and triggers MassTransit retry (which will hit the
-idempotency record and short-circuit — accepted: prefer "no email" over
-"double email").
+- `react@^19`, `react-dom@^19`
+- `@tanstack/react-query@^5`, `@tanstack/react-router@^1`
+- `keycloak-js@^25`
+- `axios@^1`
+- `zustand@^5`
+- `react-hook-form@^7`, `@hookform/resolvers@^3`, `zod@^3`
+- `tailwindcss@^4`, `@tailwindcss/vite@^4`
+- `lucide-react@^0`
+- shadcn/ui base components (added via `npx shadcn@latest add`)
+- Dev: `vite@^5`, `@vitejs/plugin-react@^4`, `typescript@^5`, `vitest`, `@testing-library/react`, `eslint`, `prettier`
 
 ---
 
-## 3. Email rendering (locked)
+## 2. Auth contract (locked)
 
-```csharp
-public interface ITemplateRenderer
+### `src/lib/keycloak.ts`
+
+```typescript
+import Keycloak from 'keycloak-js';
+const keycloak = new Keycloak({
+  url:      import.meta.env.VITE_KEYCLOAK_URL,
+  realm:    import.meta.env.VITE_KEYCLOAK_REALM,    // "lms"
+  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID, // "lms-spa"
+});
+export default keycloak;
+```
+
+### `useAuth()` return shape (locked)
+
+```typescript
 {
-    Task<RenderedEmail> RenderAsync<TModel>(
-        string templateId, TModel model, string language, CancellationToken ct);
-}
-
-public sealed record RenderedEmail(string Subject, string BodyHtml, string BodyText);
-```
-
-- Templates are `.sbn` Scriban files, three per template id
-  (`{id}.subject.sbn`, `{id}.html.sbn`, `{id}.text.sbn`).
-- Embedded as `EmbeddedResource` in csproj.
-- Language fallback chain: `{lang}` → `en` → throw.
-- Phase 1 ships English (`en`) only; Vietnamese (`vi`) deferred (Open Decision #5).
-- **No HTML allowed in user-supplied fields** — Scriban auto-encodes;
-  documented and asserted by an architecture test.
-
-```csharp
-public interface IEmailSender
-{
-    Task<EmailSendResult> SendAsync(EmailMessage message, CancellationToken ct);
-}
-
-public sealed record EmailMessage(
-    string ToAddress,
-    string ToDisplayName,
-    string Subject,
-    string BodyHtml,
-    string BodyText,
-    Guid TenantId,        // tagged on logs/metrics for tenant filtering
-    string? ReplyTo = null);
-
-public sealed record EmailSendResult(bool Sent, string? ProviderMessageId, string? Error);
-```
-
-- `SmtpEmailSender` uses `MailKit` `SmtpClient`, `STARTTLS`,
-  Polly retry: 3 attempts, exponential backoff 1/3/9s, on
-  `SmtpProtocolException` and `IOException`. Final failure throws →
-  MassTransit poisons after retry policy (1/5/30s) is exhausted.
-
----
-
-## 4. Configuration keys (locked)
-
-```jsonc
-{
-  "Smtp": {
-    "Host": "<aspire mailcatcher in dev>",
-    "Port": 1025,
-    "Username": "",
-    "Password": "",
-    "FromAddress": "no-reply@lms.local",
-    "FromName": "LMS Platform",
-    "UseStartTls": false
-  },
-  "Notifications": {
-    "FrontendBaseUrl": "http://localhost:5173",
-    "VerifyBaseUrl":   "http://localhost:5108/verify",
-    "SupportEmail":    "support@lms.local",
-    "IdempotencyTtlDays": 7,
-    "UserContactCacheTtlDays": 90
-  },
-  "FeatureManagement": {
-    "Notifications.LessonProgressEmail": false
-  },
-  "ConnectionStrings": {
-    "rabbitmq": "<aspire>",
-    "redis":    "<aspire>"
-  }
+  isAuthenticated: boolean;
+  token: string | undefined;
+  userId: string;          // from token "sub"
+  tenantId: string;        // from token custom claim "tenant_id"
+  roles: string[];         // from realm_access.roles
+  hasRole(role: string): boolean;
+  login(): void;
+  logout(): void;
 }
 ```
 
-`SmtpOptions` validated on startup with `IValidateOptions<SmtpOptions>`
-(non-empty host, port in 1..65535, valid `FromAddress`).
+### `<ProtectedRoute roles?={string[]}>` contract (locked)
+
+- Unauthenticated → `keycloak.login()` (no in-app login form)
+- Authenticated + missing required role → `<AccessDenied/>` component
+- Otherwise renders children
+- **Required at every non-public route** — no ad-hoc auth checks elsewhere.
+
+Public routes (no `<ProtectedRoute/>`): `/`, `/courses`, `/courses/$courseId`, `/verify/$code`.
+
+### Token storage rule (absolute)
+
+- `keycloak.token` lives in keycloak-js memory only.
+- Refresh via `keycloak.updateToken(30)` from `apiClient` request interceptor.
+- `silent-check-sso.html` served from `public/`.
+- `localStorage` / `sessionStorage` MUST NOT contain `kc-*`, `token`, `access_token`, `refresh_token`. Enforced by an architecture test (T13).
 
 ---
 
-## 5. AppHost wiring (locked diff against `src/LMS.AppHost/Program.cs`)
+## 3. Routes (locked)
 
-```csharp
-// Add MailHog for dev SMTP capture
-var mail = builder.AddContainer("mail", "mailhog/mailhog", "v1.0.1")
-                  .WithHttpEndpoint(8025, name: "ui")
-                  .WithEndpoint(1025, name: "smtp", scheme: "tcp");
+| Path | Component | Guard | Notes |
+|---|---|---|---|
+| `/` | `LandingPage` | none | Public landing |
+| `/courses` | `CataloguePage` | none | List published courses (paginated) |
+| `/courses/$courseId` | `CourseDetailPage` | none | Shows enroll CTA when authenticated |
+| `/dashboard` | `DashboardPage` | auth | My courses + progress overview |
+| `/courses/$courseId/lessons/$lessonId` | `LessonPage` | auth | Player + progress heartbeat |
+| `/courses/$courseId/assessments/$assessmentId` | `QuizPage` | auth | Quiz runner |
+| `/certificates` | `MyCertificatesPage` | auth | Learner cert list |
+| `/verify/$code` | `VerifyPage` | none | Public certificate verify |
+| `/instructor/courses` | `InstructorCoursesPage` | role: `instructor`/`admin` | Author dashboard |
+| `/instructor/courses/$courseId/edit` | `CourseEditorPage` | role: `instructor`/`admin` | Editor + section/lesson CRUD |
+| `/instructor/courses/$courseId/content` | `ContentUploadPage` | role: `instructor`/`admin` | Upload video/pdf/scorm |
+| `*` | `NotFoundPage` | none | 404 |
 
-builder.AddProject<Projects.LMS_NotificationWorker>("notifications")
-    .WithReference(rabbitmq)
-    .WithReference(redis)
-    .WithEnvironment("Smtp__Host", mail.GetEndpoint("smtp"))
-    .WithEnvironment("Smtp__Port", "1025")
-    .WaitFor(rabbitmq)
-    .WaitFor(redis)
-    .WaitFor(mail);
+Routing: TanStack Router (declarative tree under `src/app/router.tsx`, NOT file-based — keeps imports explicit and avoids codegen cycles in Phase 1).
+
+---
+
+## 4. API hooks (locked surface)
+
+All hooks live under `src/features/{slice}/api/`. All use `apiClient`.
+All `useQuery` keys follow factory pattern `{slice}Keys.{scope}(args)`.
+
+### `features/courses/api/use-courses.ts`
+
+```typescript
+export const courseKeys = {
+  all:    ()              => ['courses'] as const,
+  list:   (p: ListParams) => ['courses', 'list', p] as const,
+  detail: (id: string)    => ['courses', 'detail', id] as const,
+  syllabus: (id: string)  => ['courses', 'syllabus', id] as const,
+};
+
+useCourses(params: { page?: number; pageSize?: number; category?: string; q?: string })
+  → UseQueryResult<PagedResult<CourseSummary>>
+useCourse(courseId: string)
+  → UseQueryResult<Course>
+useCourseSyllabus(courseId: string)
+  → UseQueryResult<SectionWithLessons[]>
+useCreateCourse()
+  → UseMutationResult<Course, AxiosError, CreateCourseRequest>
+useUpdateCourse()
+  → UseMutationResult<Course, AxiosError, { id: string; data: UpdateCourseRequest }>
+usePublishCourse()
+  → UseMutationResult<Course, AxiosError, string /* courseId */>
 ```
 
-No gateway change (no inbound HTTP).
+Endpoints: `GET/POST /api/courses`, `GET/PUT /api/courses/{id}`, `GET /api/courses/{id}/syllabus`, `POST /api/courses/{id}/publish`.
 
----
+### `features/enrollment/api/use-enrollments.ts`
 
-## 6. Observability (locked)
-
-- All log entries include `TenantId`, `UserId` (when known), `EventType`,
-  `MessageId`, `TemplateId`.
-- Metrics (`LMS.NotificationWorker` meter):
-  - `notifications.sent`     (counter, tags: `tenant_id`, `template_id`)
-  - `notifications.dropped`  (counter, tags: `tenant_id`, `reason` = `cache-miss|dedupe|disabled`)
-  - `notifications.failed`   (counter, tags: `tenant_id`, `template_id`, `error_class`)
-  - `notifications.duration` (histogram, ms)
-- Activity (`OpenTelemetry`) per consumer span: `notif.consume.{event-type}`.
-
----
-
-## 7. Tests (locked surface)
-
-Unit (`tests/LMS.NotificationWorker.UnitTests/` — new project):
-- `ScribanTemplateRenderer`: every template id renders with fixture model;
-  asserts `{{ user.email }}` is auto-encoded; missing language falls back to `en`.
-- `RedisIdempotencyStore`: `TryClaim` uses `SET NX EX`; second claim returns false.
-- Per-consumer "happy path" — given event + cache hit → `IEmailSender.SendAsync`
-  invoked once with correct subject + body containing key fields.
-- Per-consumer "idempotency" — second consume → no send, no exception.
-- `LessonCompletedConsumer` with feature flag off → no send; with flag on → send.
-
-Integration (`tests/LMS.IntegrationTests/NotificationWorker/`) — Testcontainers
-RabbitMQ + Redis + MailHog (HTTP API for assertions):
-- Publish each Phase-1 event via MassTransit harness → assert one email
-  arrives in MailHog with correct subject and recipient.
-- Re-publish → only one email present (idempotent).
-- `UserRegistered` populates contact cache → subsequent `UserEnrolled`
-  for same user uses cached email.
-- Cache-miss path: publish `UserEnrolled` for unknown user → no email,
-  metric `notifications.dropped{reason=cache-miss}` increments.
-- Tenant tag propagation: emails for tenant A vs tenant B logged with
-  distinct `TenantId` (asserted via OTEL test exporter).
-
-Architecture (`LMS.ArchitectureTests`):
-- `LMS.NotificationWorker` does NOT reference `Microsoft.EntityFrameworkCore`.
-- `LMS.NotificationWorker` does NOT reference any other `LMS.*Service.*` project.
-- `LMS.NotificationWorker` does NOT contain a `HttpClient` typed reference
-  to any other LMS service (regex check on `BaseAddress` config keys).
-- Every `IConsumer<T>` reads `TenantId` from the message before logging or
-  cache access (Roslyn-syntax test or NetArchTest convention).
-
-Contract (`LMS.ContractTests`):
-- No new contracts introduced — but a regression test asserts the
-  list of consumed events exactly matches the routing table in
-  `docs/events.md` (one test per event type, fails if new consumer
-  added without updating docs).
-
----
-
-## 8. Open decisions (require human sign-off before T6/T7 start)
-
-1. **`notification.md` vs `events.md` consumer list mismatch.** Plan
-   locks `events.md` (12 consumers); `docs-writer` updates
-   `notification.md` in T11. Confirm `events.md` is the source of truth.
-2. **Email lookup for events without `Email` field.** Phase 1 strategy:
-   Redis-backed contact cache populated by `UserRegisteredConsumer`;
-   cache miss → drop email + warn. Acceptable for Phase 1 (closed user
-   base, all users pass through `UserRegistered`). Phase 2 may switch
-   to read-model snapshot or `IdentityService.UserContactReadModel`.
-   **Critical — confirm before T6 starts.**
-3. **`CourseArchived` fan-out to enrolees.** Phase 1 sends instructor-only
-   notice. Sending to N enrolees would require an enumeration source
-   (currently only EnrollmentService knows them). Defer fan-out to Phase 2
-   when EnrollmentService publishes per-enrolment cancellation events
-   on archive. Confirm Phase-1 instructor-only is acceptable.
-4. **`ContentProcessingCompleted` / `Failed` recipient.** Event has
-   `ContentItemId` but not `UploadedBy`. Phase 1 must either (a) extend
-   the event record (events-architect change) or (b) store an
-   `(ContentItemId → UploadedBy)` cache. **Plan locks (a)** — events-architect
-   extends both records with `UploadedBy: Guid` (additive, backwards
-   compatible since publisher already has the value). Reflected in T1.
-5. **i18n — `vi` templates.** Deferred to Phase 2 with `AiTranslation`
-   feature flag. Phase 1 ships `en` only.
-6. **DLQ / poison handling.** MassTransit default `_error` queue is
-   acceptable; no custom handler in Phase 1. Operations runbook entry
-   created in `docs-writer` T11.
-7. **Rate limiting / per-tenant throttling.** None Phase 1. SMTP server
-   is the only bottleneck; MailHog dev / configurable prod. Phase 2 may
-   add per-tenant token bucket.
-8. **MailHog vs SmtpDev.** Locked MailHog. Aspire image
-   `mailhog/mailhog:v1.0.1`. Confirm.
-
----
-
-## 9. Contract changes locked
-
-### Event record extensions (events-architect — T1)
-
-**Additive only** — adding nullable / new fields to existing records.
-
-```csharp
-// LMS.Contracts/Content/ContentProcessingCompleted.cs
-public record ContentProcessingCompleted(
-    Guid EventId, Guid ContentItemId, Guid TenantId,
-    Guid UploadedBy,                        // NEW (Phase 1)
-    string HlsManifestUrl, int DurationSeconds,
-    DateTimeOffset OccurredAt);
-
-// LMS.Contracts/Content/ContentProcessingFailed.cs
-public record ContentProcessingFailed(
-    Guid EventId, Guid ContentItemId, Guid TenantId,
-    Guid UploadedBy,                        // NEW (Phase 1)
-    string Reason, DateTimeOffset OccurredAt);
+```typescript
+useMyEnrollments()              // GET /api/enrollments/me
+  → UseQueryResult<Enrollment[]>
+useEnroll()                      // POST /api/enrollments  body: { courseId }
+  → UseMutationResult<Enrollment, AxiosError<ErrorResponse>, { courseId: string }>
+  // 409 PAYMENT_REQUIRED handled by component (calls onPaymentRequired)
+useCancelEnrollment()
+  → UseMutationResult<void, AxiosError, string /* enrollmentId */>
 ```
 
-ContentService publisher must be updated to include `UploadedBy`.
-This is in scope for **T1 events-architect** task; the ContentService
-change is tracked as a follow-up but does NOT block this feature
-because Phase 1 ContentService implementation is not yet shipped
-(no upstream consumer drift).
+### `features/content/api/use-content.ts`
 
-No NEW event records are introduced.
+```typescript
+useContentStream(contentItemId: string)        // GET /api/content/{id}/stream
+  → UseQueryResult<{ url: string; expiresAt: string; resumePositionSeconds: number }>
+useReportContentProgress()                     // POST /api/content/{id}/progress
+  → UseMutationResult<void, AxiosError, { contentItemId: string; lessonId: string; positionSeconds: number; totalSeconds: number }>
+useUploadContent()                             // POST /api/content/upload (init) → S3 PUT → POST /api/content/{id}/process
+  → UseMutationResult<ContentItem, AxiosError, { file: File; lessonId: string; contentType: 'video'|'pdf'|'scorm'|'h5p' }>
+```
 
-### Documentation updates (docs-writer — T11)
-- `docs/notification.md` updated to match the 12-event consumer list.
-- `docs/events.md` routing table refreshed if `UploadedBy` field added.
+### `features/progress/api/use-progress.ts`
+
+```typescript
+useMyProgress()                                  // GET /api/progress/me
+  → UseQueryResult<CourseProgress[]>
+useCourseProgress(courseId: string)              // GET /api/progress/courses/{courseId}
+  → UseQueryResult<CourseProgress>
+useCompleteLesson()                              // POST /api/progress/lessons/{id}/complete
+  → UseMutationResult<void, AxiosError, { lessonId: string; courseId: string; watchPercent: number }>
+```
+
+### `features/assessment/api/use-assessments.ts`
+
+```typescript
+useStartAssessmentSession()                      // POST /api/assessments/{id}/sessions
+  → UseMutationResult<SessionStartedDto, AxiosError, string /* assessmentId */>
+useSubmitAssessment()                            // POST /api/assessments/sessions/{sid}/submit
+  → UseMutationResult<AssessmentResultDto, AxiosError, { sessionId: string; answers: AnswerDto[] }>
+useMyAttempts(assessmentId: string)              // GET /api/assessments/{id}/attempts/me
+  → UseQueryResult<AttemptSummaryDto[]>
+```
+
+### `features/certificate/api/use-certificates.ts`
+
+```typescript
+useMyCertificates()                              // GET /api/certificates/me
+  → UseQueryResult<CertificateSummary[]>
+useCertificate(id: string)                       // GET /api/certificates/{id}
+  → UseQueryResult<CertificateDetail>
+useVerifyCertificate(code: string)               // GET /verify/{code} — public, no auth header
+  → UseQueryResult<VerificationResult>
+```
+
+> The `/verify` hook MUST use a separate axios instance (`publicApiClient`) that does NOT attach the Authorization header — to support unauthenticated verify links and to avoid cache-busting per logged-in user. Defined in `src/lib/api-client.ts`.
+
+### Cross-cutting types in `src/types/index.ts`
+
+Re-uses the type definitions in `docs/frontend.md` §"TypeScript types" verbatim. New additions:
+
+```typescript
+export interface ErrorResponse {
+  code: string;          // e.g. "PAYMENT_REQUIRED", "VALIDATION_FAILED"
+  message: string;
+  details?: { field: string; message: string }[];
+  traceId?: string;
+}
+
+export interface SessionStartedDto { sessionId: string; assessmentId: string; questions: QuestionDto[]; expiresAt: string; }
+export interface AnswerDto { questionId: string; selectedOptionIds?: string[]; freeText?: string; }
+export interface AssessmentResultDto { sessionId: string; score: number; passed: boolean; correctCount: number; total: number; }
+export interface AttemptSummaryDto { id: string; score: number; passed: boolean; submittedAt: string; }
+
+export interface CertificateSummary { id: string; courseId: string; courseTitle: string; issuedAt: string; verificationCode: string; pdfUrl: string; }
+export interface CertificateDetail extends CertificateSummary { learnerName: string; certificateNumber: string; }
+export interface VerificationResult { isValid: boolean; certificate?: CertificateDetail; }
+```
+
+---
+
+## 5. Zustand slices (locked — UI state only, never server state)
+
+| Store file | State | Notes |
+|---|---|---|
+| `features/content/store/player-store.ts` | `currentLessonId`, `isPlaying`, `volume`, `playbackRate`, `lastReportedAt` | Local video/scorm playback UI |
+| `features/assessment/store/quiz-store.ts` | `sessionId`, `currentQuestionIndex`, `draftAnswers: Record<questionId, AnswerDto>`, `startedAt`, `expiresAt` | Quiz progress draft (never server truth) |
+| `components/layout/ui-store.ts` | `sidebarOpen`, `theme: 'light'|'dark'|'system'`, `toast queue` | Global UI shell |
+
+Rule: NO Zustand store may hold tokens, user identity, tenant id, or any data that comes from an API. Those come from `useAuth()` or TanStack Query exclusively.
+
+---
+
+## 6. apiClient contract (locked — single source of truth)
+
+`src/lib/api-client.ts` exports exactly two named instances:
+
+- `apiClient` — attaches `Authorization: Bearer ${keycloak.token}` after `keycloak.updateToken(30)`; on 401 calls `keycloak.login()`.
+- `publicApiClient` — same baseURL, NO interceptors; only used for `/verify/{code}`.
+
+Both use `import.meta.env.VITE_API_BASE_URL` (gateway URL injected by Aspire — never hard-coded). An architecture test (T13) fails the build if any other file creates an `axios.create(...)` call.
+
+---
+
+## 7. AppHost wiring (locked diff against `src/LMS.AppHost/Program.cs`)
+
+Replace the commented frontend block (lines 152–161) with:
+
+```csharp
+var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
+    .WithReference(gateway)
+    .WaitFor(gateway)
+    .WithEnvironment("VITE_API_BASE_URL",       gateway.GetEndpoint("http"))
+    .WithEnvironment("VITE_KEYCLOAK_URL",       keycloak.GetEndpoint("http"))
+    .WithEnvironment("VITE_KEYCLOAK_REALM",     "lms")
+    .WithEnvironment("VITE_KEYCLOAK_CLIENT_ID", "lms-spa")
+    .WithHttpEndpoint(env: "PORT", port: 5173)
+    .WithExternalHttpEndpoints()
+    .PublishAsDockerFile();   // optional Phase 2; OK to omit Phase 1
+```
+
+> The relative path is `../../frontend` because AppHost runs from `src/LMS.AppHost/bin/...`. Confirm working dir with `Directory.GetCurrentDirectory()` resolution. **Open Decision #1.**
+
+Gateway must add `http://localhost:5173` to `Cors:AllowedOrigins` (already configured per `docs/architecture.md` §Gateway block; verify in T11).
+
+Keycloak realm `lms` must register client `lms-spa` with redirect `http://localhost:5173/*` and webOrigins `http://localhost:5173`. Already documented in `docs/frontend.md`. **No code change required if `keycloak/lms-realm.json` already contains it — T11 verifies; if missing, T11 adds.**
+
+---
+
+## 8. Environment variables (locked)
+
+`frontend/.env.example` (committed):
+
+```
+VITE_API_BASE_URL=http://localhost:5000
+VITE_KEYCLOAK_URL=http://localhost:8080
+VITE_KEYCLOAK_REALM=lms
+VITE_KEYCLOAK_CLIENT_ID=lms-spa
+```
+
+`frontend/.env.local` is gitignored. Aspire injects the four `VITE_*` vars at runtime (overrides `.env.local`).
+
+---
+
+## 9. Tests (locked surface)
+
+Vitest unit (`frontend/src/**/*.test.ts(x)`):
+- `apiClient` request interceptor: with token → header attached; without token → no header.
+- `apiClient` 401 response → `keycloak.login()` called.
+- `useAuth` shape from a mocked keycloak object.
+- `<ProtectedRoute>`: unauth → calls `login()`, missing role → `<AccessDenied/>`, ok → renders children.
+- Each TanStack Query hook: query key is stable; mutation invalidates correct keys (using `QueryClient` test harness).
+- Zod schemas reject invalid payloads (one Theory case per form).
+
+Architecture (custom vitest tests under `frontend/tests/architecture/`):
+- No file outside `src/lib/api-client.ts` calls `axios.create(`.
+- No file references `localStorage.setItem(.+token` or `sessionStorage.setItem(.+token`.
+- No component fetches data outside a TanStack Query hook (regex: `apiClient\.(get|post|put|delete|patch)` in `src/features/**/components/**` other than mutation-onSubmit handlers — refined in T13).
+- No inline `style={{` in any `src/**/*.tsx`.
+
+Component (React Testing Library):
+- `CourseCard`, `EnrollButton` (with 409 PAYMENT_REQUIRED branch), `QuizRunner` (renders draft answers from Zustand), `VideoPlayer` (heartbeat fires every 30s with fake timers).
+
+E2E: deferred to Phase 2 (Playwright).
+
+Backend integration: gateway CORS preflight test in `tests/LMS.IntegrationTests/Gateway/CorsTests.cs` — assert `OPTIONS /api/courses` from `Origin: http://localhost:5173` returns 204 with the right `Access-Control-*` headers (added in T11).
+
+---
+
+## 10. Open decisions (require human sign-off before T6+ start)
+
+1. **AppHost relative path to `frontend/`.** Locked as `../../frontend`; confirm vs Aspire's resolution from solution root. (Some Aspire versions resolve relative to AppHost csproj dir.) Block T11 if path mismatch.
+2. **TanStack Router style.** Locked as **declarative tree** (no file-based codegen) for Phase 1. Confirm — file-based gives type-safe `Link` props but adds a build step.
+3. **shadcn/ui scope Phase 1.** Locked initial set: `button`, `card`, `input`, `label`, `dialog`, `dropdown-menu`, `select`, `tabs`, `toast`, `skeleton`, `progress`, `badge`. More added on demand. Confirm.
+4. **Tailwind v4 vs v3.** Locked **v4** (matches `docs/architecture.md` scaffold using `@tailwindcss/vite`). Confirm OK to ship v4 (some shadcn templates assume v3 + tailwind.config.ts).
+5. **PDF viewer library.** Not locked. Candidates: `react-pdf` (Mozilla pdf.js wrapper) vs native `<iframe>` to a server-signed URL. Phase 1 baseline = native iframe (ContentService returns a signed URL). Confirm before T7.
+6. **Vietnamese (`vi`) UI strings.** Phase 1 ships English copy only; i18n framework deferred to Phase 2 (`AiTranslation` flag). Confirm.
+7. **Keycloak realm file already includes `lms-spa` client?** If not, T11 must add the JSON snippet from `docs/frontend.md`. Confirm whether realm file currently has it (file lives at repo root or `src/LMS.AppHost/keycloak/lms-realm.json`).
+8. **Production hosting model.** Phase 1 = Vite dev server via Aspire `AddNpmApp`. Production static-host story (S3+CloudFront vs Nginx vs Vercel) deferred to Phase 2 — only affects T11 docs note.
+9. **Optimistic UI for enroll/complete.** Phase 1 baseline = no optimistic updates (simple `invalidateQueries` on success). Confirm acceptable for UX latency budget (~300ms gateway round-trip).
+10. **Rate-limit / retry policy on `apiClient`.** Phase 1 = axios default (no retries). 401 → login. 5xx → bubble to query `isError`. Confirm — this differs from gateway's per-route rate limit which surfaces as 429 (UI shows toast).
+
+---
+
+## 11. Contract change set
+
+No backend events introduced. No new entities. Only additive items:
+
+- `tests/LMS.IntegrationTests/Gateway/CorsTests.cs` — new file (T11).
+- `src/LMS.AppHost/Program.cs` — uncomment + adjust frontend block (T11).
+- `keycloak/lms-realm.json` — verify/add `lms-spa` client (T11).
+- `frontend/` — entire directory created (T1–T10).
+- `.gitignore` — append `frontend/node_modules/`, `frontend/.env.local`, `frontend/dist/` (T1).
+
+No event records changed. No `LMS.Contracts` impact.
