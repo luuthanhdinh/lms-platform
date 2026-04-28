@@ -38,11 +38,11 @@ src/
   gateway/LMS.Gateway/  # YARP + JWT validation + rate limiting
   services/LMS.{Name}Service/   # one folder per service
   frontend/                     # React app — see docs/frontend.md
-  src/
-    app/                # TanStack Router route tree
-    features/           # feature-sliced: courses/, enrollment/, assessment/, etc.
-    lib/                # api-client, keycloak, query-client
-    components/ui/      # shadcn/ui base components
+    src/
+      app/              # TanStack Router route tree
+      features/         # feature-sliced: courses/, enrollment/, assessment/, etc.
+      lib/              # api-client, keycloak, query-client
+      components/ui/    # shadcn/ui base components
 tests/
   LMS.IntegrationTests/
   LMS.ContractTests/
@@ -56,11 +56,11 @@ docs/                   # read before touching a service
   adr/adr-{001-031}.md  # all architecture decisions
 ```
 
-## Phase 1 services (build these first — in this order)
+## Phase 1 services (all shipped)
 1. LMS.Gateway · 2. LMS.IdentityService · 3. LMS.CourseService
 4. LMS.ContentService · 5. LMS.EnrollmentService · 6. LMS.ProgressService
 7. LMS.AssessmentService · 8. LMS.CertificateService · 9. LMS.NotificationWorker
-10. React frontend (after gateway is running)
+10. React frontend
 
 ## Before working on any service
 Read `docs/architecture.md` + `docs/services/{name}.md` first.

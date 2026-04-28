@@ -18,12 +18,10 @@
       "Bash(dotnet user-secrets:*)",
       "Bash(pnpm:*)",
       "Bash(npm:*)",
-      "Bash(python .claude/orchestrate.py)",
       "Bash(bash .claude/skills/backend-dev/check-patterns.sh:*)",
       "Bash(bash .claude/skills/tenant-isolation/audit.sh:*)",
       "Read(**)",
       "Write(src/**)",
-      "Write(frontend/**)",
       "Write(tests/**)",
       "Write(docs/**)",
       "Write(.claude/contracts.md)",
@@ -32,7 +30,7 @@
       "Write(.claude/security-report.md)",
       "Write(.claude/tenant-audit.md)",
       "Write(.claude/run-summary.json)",
-      "Write(.claude-worktrees/**)"
+      "Write(.claude/worktrees/**)"
     ],
     "deny": [
       "Bash(rm -rf:*)",
@@ -53,10 +51,10 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write(frontend/**)",
+        "matcher": "Write(src/frontend/**)",
         "hooks": [
           { "type": "command",
-            "command": "(cd frontend && pnpm lint --fix 2>/dev/null) || true" }
+            "command": "(cd src/frontend && npm run lint --fix 2>/dev/null) || true" }
         ]
       },
       {
