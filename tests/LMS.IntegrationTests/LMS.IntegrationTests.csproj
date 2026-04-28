@@ -18,5 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\gateway\LMS.Gateway\LMS.Gateway.csproj" />
     <ProjectReference Include="..\..\src\services\LMS.IdentityService\LMS.IdentityService.Api\LMS.IdentityService.Api.csproj" />
+    <ProjectReference Include="..\..\src\services\LMS.CourseService\LMS.CourseService.Api\LMS.CourseService.Api.csproj" />
+    <ProjectReference Include="..\..\src\services\LMS.CourseService\LMS.CourseService.Domain\LMS.CourseService.Domain.csproj" />
   </ItemGroup>
 </Project>
