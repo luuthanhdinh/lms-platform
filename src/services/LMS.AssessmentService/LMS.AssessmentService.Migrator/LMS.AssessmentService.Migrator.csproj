@@ -8,6 +8,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Aspire.Npgsql" Version="9.*" />
     <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.*" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.4">

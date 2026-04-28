@@ -111,4 +111,5 @@ desktop.ini
 # ─── CI / temp ────────────────────────────────────────────────────────────────
 
 .claude-worktrees/
+.claude/worktrees/
 .claude/run-summary.json

@@ -487,6 +487,24 @@ app.Run();
 - MFA: Required (`CONFIGURE_TOTP`) for `instructor`, `admin`, `org-admin` on first login
 - Token lifespan: access = 15 min · refresh = 30 days
 
+### Dev admin credentials
+
+Aspire generates a random admin password each time the Keycloak container is recreated.
+Retrieve the current credentials with:
+
+```bash
+docker inspect $(docker ps -qf "name=keycloak") \
+  | python3 -c "import sys,json; env=json.load(sys.stdin)[0]['Config']['Env']; [print(e) for e in env if 'ADMIN' in e]"
+```
+
+Output example:
+```
+KC_BOOTSTRAP_ADMIN_USERNAME=admin
+KC_BOOTSTRAP_ADMIN_PASSWORD=5Muw2u6XhHyQs_r!geb)-a
+```
+
+Then log in at `http://localhost:<keycloak-port>/admin` (check the Aspire dashboard for the current port).
+
 ---
 
 ## Feature Flags — `appsettings.json` defaults

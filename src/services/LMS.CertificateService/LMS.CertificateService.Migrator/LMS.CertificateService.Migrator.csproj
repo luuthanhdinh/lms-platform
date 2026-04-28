@@ -6,6 +6,8 @@
     <RootNamespace>LMS.CertificateService.Migrator</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Aspire.Npgsql" Version="9.*" />
+    <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.4" />
   </ItemGroup>
   <ItemGroup>

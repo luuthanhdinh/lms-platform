@@ -9,7 +9,10 @@ public class CertificateDbContextFactory : IDesignTimeDbContextFactory<Certifica
     public CertificateDbContext CreateDbContext(string[] args)
     {
         var options = new DbContextOptionsBuilder<CertificateDbContext>()
-            .UseNpgsql("Host=localhost;Database=lms-certificate;Username=postgres;Password=postgres")
+            .UseNpgsql("Host=localhost;Database=lms-certificate;Username=postgres;Password=lms_dev_pg",
+                b => b.MigrationsHistoryTable("__EFMigrationsHistory", "public")
+                      .MigrationsAssembly("LMS.CertificateService.Infrastructure"))
+            .UseSnakeCaseNamingConvention()
             .Options;
 
         return new CertificateDbContext(options, new DesignTimeTenantContext());

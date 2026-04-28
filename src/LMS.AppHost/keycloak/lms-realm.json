@@ -18,6 +18,33 @@
       "webOrigins": [
         "http://localhost:5173",
         "http://localhost:5174"
+      ],
+      "protocolMappers": [
+        {
+          "name": "lms-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "lms-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "tenant-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
       ]
     },
     {
@@ -30,9 +57,45 @@
   ],
   "roles": {
     "realm": [
-      { "name": "student", "description": "Enrolled learner" },
-      { "name": "instructor", "description": "Course instructor" },
-      { "name": "admin", "description": "Platform administrator" }
+      {
+        "name": "student",
+        "description": "Enrolled learner"
+      },
+      {
+        "name": "instructor",
+        "description": "Course instructor"
+      },
+      {
+        "name": "admin",
+        "description": "Platform administrator"
+      }
     ]
-  }
+  },
+  "users": [
+    {
+      "username": "testadmin",
+      "email": "testadmin@lms.dev",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Test",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Test1234!",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "tenant_id": [
+          "00000000-0000-0000-0000-000000000001"
+        ]
+      },
+      "realmRoles": [
+        "student",
+        "instructor",
+        "admin"
+      ]
+    }
+  ]
 }

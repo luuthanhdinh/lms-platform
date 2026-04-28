@@ -6,13 +6,15 @@
     <RootNamespace>LMS.AssessmentService.Infrastructure</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.3.0" />
+    <PackageReference Include="EFCore.NamingConventions" Version="9.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.4" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <PackageReference Include="MassTransit" Version="8.4.1" />
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.4.1" />
     <PackageReference Include="MassTransit.EntityFrameworkCore" Version="8.4.1" />
     <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
-    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="9.0.4" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="9.0.9" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\LMS.AssessmentService.Domain\LMS.AssessmentService.Domain.csproj" />
