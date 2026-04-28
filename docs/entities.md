@@ -211,9 +211,8 @@ public class LessonProgress : TenantEntity
     public Guid LessonId { get; set; }
     public Guid CourseId { get; set; }
     public ProgressStatus Status { get; set; } = ProgressStatus.NotStarted;
-    public float WatchPercent { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
-    public DateTimeOffset? LastAccessedAt { get; set; }
+    public DateTimeOffset LastAccessedAt { get; set; }
 }
 
 public class CourseProgress : TenantEntity
@@ -225,10 +224,19 @@ public class CourseProgress : TenantEntity
     public int TotalRequiredLessons { get; set; }      // IsOptional=false lessons only
     public DateTimeOffset? LastAccessedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
+    public bool CourseCompletedEventPublished { get; set; }   // Idempotency gate for CourseCompleted event
 }
 
 public enum ProgressStatus { NotStarted, InProgress, Completed }
 ```
+
+**Schema:** `progress`. **Indexes:**
+- `LessonProgress`: Unique `(TenantId, UserId, LessonId)` for one-to-one per student per lesson; `(TenantId, UserId, CourseId)` for listing lessons in a course.
+- `CourseProgress`: Unique `(TenantId, UserId, CourseId)` for one-to-one per student per course; `(TenantId, CourseId)` for course analytics.
+
+**Concurrency:** `xmin` via `.IsRowVersion()` (Postgres row version for optimistic locking) on both entities.
+
+**Tenant filter:** Global `HasQueryFilter` on both entities filtering by `_tenantContext.TenantId`.
 
 ---
 
