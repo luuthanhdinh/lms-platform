@@ -37,7 +37,7 @@ src/
   LMS.SharedKernel/     # TenantEntity, Result<T>, middleware
   gateway/LMS.Gateway/  # YARP + JWT validation + rate limiting
   services/LMS.{Name}Service/   # one folder per service
-frontend/                       # React app — see docs/frontend.md
+  frontend/                     # React app — see docs/frontend.md
   src/
     app/                # TanStack Router route tree
     features/           # feature-sliced: courses/, enrollment/, assessment/, etc.
