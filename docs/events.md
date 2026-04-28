@@ -257,6 +257,7 @@ public record LabSessionTerminated(
 | `CoursePublished` | CourseService | EnrollmentService (open enrolment), NotificationWorker |
 | `CourseArchived` | CourseService | EnrollmentService (suspend active enrollments), NotificationWorker |
 | `UserEnrolled` | EnrollmentService | ProgressService (seed record), CourseService (increment count), NotificationWorker |
+| `EnrollmentCancelled` | EnrollmentService | ProgressService (freeze progress), CourseService (decrement enrolment count), NotificationWorker (cancellation email) |
 | `LessonCompleted` | ProgressService | GamificationService*, NotificationWorker |
 | `CourseCompleted` | ProgressService | CertificateService, GamificationService* |
 | `ContentUploaded` | ContentService.Api | ContentService.Worker (trigger processing pipeline) |
