@@ -51,6 +51,9 @@
     <Project Path="src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/LMS.IdentityService.Infrastructure.csproj" />
     <Project Path="src/services/LMS.IdentityService/LMS.IdentityService.Migrator/LMS.IdentityService.Migrator.csproj" />
   </Folder>
+  <Folder Name="/src/services/LMS.NotificationWorker/">
+    <Project Path="src/services/LMS.NotificationWorker/LMS.NotificationWorker.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj" />
   </Folder>

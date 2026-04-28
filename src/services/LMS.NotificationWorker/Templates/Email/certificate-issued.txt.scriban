@@ -1,0 +1,10 @@
+Certificate Issued — Congratulations, {{ full_name }}!
+
+Your certificate for completing "{{ course_name }}" has been issued.
+
+Certificate Number: {{ certificate_number }}
+Verification URL: {{ verification_url }}
+
+Download or verify your certificate at the link above.
+
+Share your achievement with your network!

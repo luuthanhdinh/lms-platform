@@ -1,220 +1,271 @@
 {
-  "feature": "LMS.CertificateService — Phase 1 service #8: issue PDF certificates on CourseCompleted, anonymous verify, admin revoke.",
+  "feature": "LMS.NotificationWorker — Phase 1 service #9: stateless event-driven email worker (MailKit SMTP, Scriban templates, Redis idempotency).",
   "phase": 1,
   "complexity": "L",
   "tasks": [
     {
       "id": "T1",
       "agent": "events-architect",
-      "title": "Add CertificateIssued event to LMS.Contracts",
-      "spec": "Create src/LMS.Contracts/Certificate/CertificateIssued.cs as a sealed record with shape (Guid EventId, Guid TenantId, Guid CertificateId, Guid UserId, Guid CourseId, string CertificateNumber, Guid VerificationCode, DateTimeOffset IssuedAt, DateTimeOffset OccurredAt). XML doc-comment must call out idempotency key = EventId. Update docs/events.md routing table: add row 'CertificateIssued | CertificateService | NotificationWorker'. Do NOT modify any other event. Resolve Open Decision #3 by documenting Phase-1 vs Phase-4 split (CertificateIssued vs CredentialIssued) in the event-record XML doc.",
+      "title": "Extend ContentProcessingCompleted / Failed with UploadedBy (additive)",
+      "spec": "Per contracts.md section 9. Add `Guid UploadedBy` after `Guid TenantId` in both `LMS.Contracts/Content/ContentProcessingCompleted.cs` and `LMS.Contracts/Content/ContentProcessingFailed.cs`. Update `docs/events.md` records to match. No other event records change. NotificationWorker is the only consumer needing the field, but ContentService.Worker (publisher, currently not yet shipped) must also pass UploadedBy when implemented — leave a TODO comment near the records calling that out. Run a build of LMS.Contracts and any project that already references these records (none currently).",
       "files": [
-        "src/LMS.Contracts/Certificate/CertificateIssued.cs",
+        "src/LMS.Contracts/Content/ContentProcessingCompleted.cs",
+        "src/LMS.Contracts/Content/ContentProcessingFailed.cs",
         "docs/events.md"
       ],
       "depends_on": [],
-      "branch": "feature/cert-T1-event",
-      "worktree": ".claude-worktrees/T1-cert-event",
+      "branch": "feature/notif-T1-event-extend",
+      "worktree": ".claude-worktrees/T1-notif-event",
       "timeout_minutes": 20,
       "acceptance": [
-        "dotnet build src/LMS.Contracts/LMS.Contracts.csproj",
-        "test -f src/LMS.Contracts/Certificate/CertificateIssued.cs"
+        "dotnet build src/LMS.Contracts/LMS.Contracts.csproj"
       ]
     },
     {
       "id": "T2",
       "agent": "backend",
-      "title": "Scaffold CertificateService 4-project layout",
-      "spec": "Use the /scaffold-service playbook. Create LMS.CertificateService.{Domain,Infrastructure,Api,Migrator} under src/services/LMS.CertificateService/. Domain references LMS.SharedKernel only. Infrastructure references Domain + LMS.Contracts + LMS.ServiceDefaults + EF Core + Npgsql + MassTransit + MassTransit.EntityFrameworkCore + QuestPDF + QRCoder + Azure.Storage.Blobs. Api references Infrastructure + LMS.ServiceDefaults + Aspire.Npgsql.EntityFrameworkCore.PostgreSQL + Aspire.Azure.Storage.Blobs + Microsoft.FeatureManagement.AspNetCore. Migrator references Infrastructure + LMS.ServiceDefaults. Add all four to LMS.slnx. Set TreatWarningsAsErrors. Empty Program.cs in Api with AddServiceDefaults + MapDefaultEndpoints stubs only — endpoints come in T7. Migrator IHostedService skeleton runs context.Database.MigrateAsync once. Port 5108 in launchSettings.json.",
+      "title": "Scaffold LMS.NotificationWorker project",
+      "spec": "Create `src/services/LMS.NotificationWorker/` as a single-project worker (NOT the 4-project layout — no DB, no API). `dotnet new worker -n LMS.NotificationWorker`. Add to LMS.slnx. ProjectReferences: LMS.ServiceDefaults, LMS.Contracts, LMS.SharedKernel. NuGet: MassTransit, MassTransit.RabbitMQ, MailKit, Scriban, Aspire.StackExchange.Redis, Microsoft.FeatureManagement, Polly. TreatWarningsAsErrors. Empty Program.cs uses `Host.CreateApplicationBuilder` + `AddServiceDefaults` + MassTransit + Redis + FeatureManagement registration only — consumers come in T6. Create folder structure per contracts.md section 1 (empty `.gitkeep` placeholders OK). appsettings.json + appsettings.Development.json with sections per contracts.md section 4.",
       "files": [
-        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/LMS.CertificateService.Domain.csproj",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/LMS.CertificateService.Infrastructure.csproj",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Api/LMS.CertificateService.Api.csproj",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Api/Program.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Api/Properties/launchSettings.json",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Migrator/LMS.CertificateService.Migrator.csproj",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Migrator/Program.cs",
+        "src/services/LMS.NotificationWorker/LMS.NotificationWorker.csproj",
+        "src/services/LMS.NotificationWorker/Program.cs",
+        "src/services/LMS.NotificationWorker/appsettings.json",
+        "src/services/LMS.NotificationWorker/appsettings.Development.json",
+        "src/services/LMS.NotificationWorker/Properties/launchSettings.json",
         "LMS.slnx"
       ],
       "depends_on": [],
-      "branch": "feature/cert-T2-scaffold",
-      "worktree": ".claude-worktrees/T2-cert-scaffold",
-      "timeout_minutes": 30,
+      "branch": "feature/notif-T2-scaffold",
+      "worktree": ".claude-worktrees/T2-notif-scaffold",
+      "timeout_minutes": 25,
       "acceptance": [
-        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Api/LMS.CertificateService.Api.csproj",
-        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Migrator/LMS.CertificateService.Migrator.csproj"
+        "dotnet build src/services/LMS.NotificationWorker/LMS.NotificationWorker.csproj"
       ]
     },
     {
       "id": "T3",
       "agent": "backend",
-      "title": "Domain: Certificate entity, DTOs, abstractions",
-      "spec": "Per contracts.md sections 2, 5, 7. In LMS.CertificateService.Domain: Certificate entity (TenantEntity-derived) with CertificateNumber, TemplateId?, PdfStorageKey, RevokedAt, RevocationReason, Phase-4 placeholders; owned BlockchainAnchor; AnchorStatus enum. ICertificatePdfRenderer + CertificateRenderProfile record. IPdfStorage interface. CertificateNumberGenerator static helper (CERT-{yyyy}-{Crockford-base32 8-char of Id}). DTOs: CertificateDto, CertificateVerificationDto, RevokeCertificateRequest. FluentValidation validator for RevokeCertificateRequest (Reason: non-empty, <= 500). Unit tests covering CertificateNumberGenerator format + 10k uniqueness + validator.",
+      "title": "Email + Templating + Idempotency primitives",
+      "spec": "Implement contracts.md section 3 + 4 primitives. (1) `Email/IEmailSender.cs` + `EmailMessage.cs` + `EmailSendResult.cs` records. (2) `Email/SmtpEmailSender.cs` using MailKit SmtpClient, STARTTLS gated by SmtpOptions.UseStartTls, Polly retry 3x exp 1/3/9s on SmtpProtocolException + IOException, returns EmailSendResult. (3) `Templates/ITemplateRenderer.cs` + `Templates/ScribanTemplateRenderer.cs` resolves `{templateId}.{lang}.{subject|html|text}.sbn` from EmbeddedResource manifest, fallback chain `{lang}->en->throw`. (4) `Idempotency/IIdempotencyStore.cs` + `Idempotency/RedisIdempotencyStore.cs` exposing `Task<bool> TryClaimAsync(string key, TimeSpan ttl, CancellationToken)` using `IDatabase.StringSetAsync(key, '1', ttl, When.NotExists)`. (5) `Options/SmtpOptions.cs` + `Options/NotificationOptions.cs` with `IValidateOptions` validators. (6) `Email/IUserContactCache.cs` + `Email/RedisUserContactCache.cs` storing JSON `{Email,DisplayName,Language}` with sliding 90d TTL. NO consumers in this task.",
       "files": [
-        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Entities/Certificate.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Entities/BlockchainAnchor.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Entities/AnchorStatus.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Abstractions/ICertificatePdfRenderer.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Abstractions/IPdfStorage.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Numbering/CertificateNumberGenerator.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Dtos/CertificateDto.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Dtos/CertificateVerificationDto.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Dtos/RevokeCertificateRequest.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Domain/Validators/RevokeCertificateRequestValidator.cs"
+        "src/services/LMS.NotificationWorker/Email/IEmailSender.cs",
+        "src/services/LMS.NotificationWorker/Email/EmailMessage.cs",
+        "src/services/LMS.NotificationWorker/Email/EmailSendResult.cs",
+        "src/services/LMS.NotificationWorker/Email/SmtpEmailSender.cs",
+        "src/services/LMS.NotificationWorker/Email/IUserContactCache.cs",
+        "src/services/LMS.NotificationWorker/Email/RedisUserContactCache.cs",
+        "src/services/LMS.NotificationWorker/Templates/ITemplateRenderer.cs",
+        "src/services/LMS.NotificationWorker/Templates/ScribanTemplateRenderer.cs",
+        "src/services/LMS.NotificationWorker/Idempotency/IIdempotencyStore.cs",
+        "src/services/LMS.NotificationWorker/Idempotency/RedisIdempotencyStore.cs",
+        "src/services/LMS.NotificationWorker/Options/SmtpOptions.cs",
+        "src/services/LMS.NotificationWorker/Options/NotificationOptions.cs"
       ],
       "depends_on": ["T2"],
-      "branch": "feature/cert-T3-domain",
-      "worktree": ".claude-worktrees/T3-cert-domain",
-      "timeout_minutes": 45,
+      "branch": "feature/notif-T3-primitives",
+      "worktree": ".claude-worktrees/T3-notif-primitives",
+      "timeout_minutes": 60,
       "acceptance": [
-        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Domain/LMS.CertificateService.Domain.csproj"
+        "dotnet build src/services/LMS.NotificationWorker/LMS.NotificationWorker.csproj"
       ]
     },
     {
       "id": "T4",
-      "agent": "db-migrator",
-      "title": "Initial EF migration for certificates schema",
-      "spec": "Per contracts.md section 2. CertificateDbContext in Infrastructure/Persistence/CertificateDbContext.cs with global TenantId filter via reflection over TenantEntity descendants, OwnsOne(BlockchainAnchor), xmin row-version, snake_case naming, schema 'certificates'. Indexes: filtered unique (TenantId, UserId, CourseId) WHERE revoked_at IS NULL; unique (TenantId, CertificateNumber); unique (VerificationCode); (TenantId, UserId, IssuedAt DESC). Add MassTransit EF outbox tables in same schema. Generate migration 20260427_001_InitialCertificateSchema. Wire Migrator IHostedService to apply migrations on startup.",
+      "agent": "backend",
+      "title": "Scriban template files + per-template view models",
+      "spec": "Author 11 template trios (subject/html/text Scriban files) under `Templates/Sbn/en/` for templateIds: user-registered, user-deactivated, course-published, course-archived, user-enrolled, enrollment-cancelled, course-completed, content-ready, content-failed, assessment-submitted, certificate-issued. Each with corresponding `Templates/Models/{TemplateId}Model.cs` immutable record. All `.sbn` files declared as `<EmbeddedResource>` in csproj. HTML templates wrap text in a minimal table layout; text templates plain text. Use `{{ user.email }}` style; rely on Scriban auto-encoding (no `| html.raw`). Subject lines kept short and ASCII. CTAs use `{{ frontend_base_url }}` placeholder fed from NotificationOptions.",
       "files": [
-        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Persistence/CertificateDbContext.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Persistence/Configurations/CertificateConfiguration.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Migrations/20260427_001_InitialCertificateSchema.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Migrations/20260427_001_InitialCertificateSchema.Designer.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Migrations/CertificateDbContextModelSnapshot.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Migrator/MigrationsHostedService.cs"
+        "src/services/LMS.NotificationWorker/Templates/Models/UserRegisteredModel.cs",
+        "src/services/LMS.NotificationWorker/Templates/Models/UserDeactivatedModel.cs",
+        "src/services/LMS.NotificationWorker/Templates/Models/CoursePublishedModel.cs",
+        "src/services/LMS.NotificationWorker/Templates/Models/CourseArchivedModel.cs",
+        "src/services/LMS.NotificationWorker/Templates/Models/UserEnrolledModel.cs",
+        "src/services/LMS.NotificationWorker/Templates/Models/EnrollmentCancelledModel.cs",
+        "src/services/LMS.NotificationWorker/Templates/Models/CourseCompletedModel.cs",
+        "src/services/LMS.NotificationWorker/Templates/Models/ContentReadyModel.cs",
+        "src/services/LMS.NotificationWorker/Templates/Models/ContentFailedModel.cs",
+        "src/services/LMS.NotificationWorker/Templates/Models/AssessmentSubmittedModel.cs",
+        "src/services/LMS.NotificationWorker/Templates/Models/CertificateIssuedModel.cs",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-registered.subject.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-registered.html.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-registered.text.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-deactivated.subject.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-deactivated.html.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-deactivated.text.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-published.subject.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-published.html.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-published.text.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-archived.subject.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-archived.html.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-archived.text.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-enrolled.subject.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-enrolled.html.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/user-enrolled.text.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/enrollment-cancelled.subject.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/enrollment-cancelled.html.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/enrollment-cancelled.text.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-completed.subject.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-completed.html.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/course-completed.text.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/content-ready.subject.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/content-ready.html.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/content-ready.text.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/content-failed.subject.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/content-failed.html.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/content-failed.text.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/assessment-submitted.subject.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/assessment-submitted.html.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/assessment-submitted.text.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/certificate-issued.subject.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/certificate-issued.html.sbn",
+        "src/services/LMS.NotificationWorker/Templates/Sbn/en/certificate-issued.text.sbn"
       ],
-      "depends_on": ["T3"],
-      "branch": "feature/cert-T4-migration",
-      "worktree": ".claude-worktrees/T4-cert-migration",
-      "timeout_minutes": 45,
+      "depends_on": ["T2"],
+      "branch": "feature/notif-T4-templates",
+      "worktree": ".claude-worktrees/T4-notif-templates",
+      "timeout_minutes": 60,
       "acceptance": [
-        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/LMS.CertificateService.Infrastructure.csproj",
-        "dotnet ef migrations list --project src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure --startup-project src/services/LMS.CertificateService/LMS.CertificateService.Migrator"
+        "dotnet build src/services/LMS.NotificationWorker/LMS.NotificationWorker.csproj"
       ]
     },
     {
       "id": "T5",
-      "agent": "backend",
-      "title": "Infrastructure: Azure Blob storage + QuestPDF renderer",
-      "spec": "Implement IPdfStorage as AzureBlobPdfStorage using BlobServiceClient + container 'certificate-pdfs', key '{tenantId}/{certificateId}.pdf'. Implement ICertificatePdfRenderer as QuestPdfCertificateRenderer: A4 landscape, header (issuer name + tenant logo placeholder), body (learner name + 'has completed' + course title), footer (CertificateNumber, IssuedAt, verification URL + QR via QRCoder). Set QuestPDF.Settings.License = LicenseType.Community in DI extension AddCertificateInfrastructure(IServiceCollection, IConfiguration). Wire MassTransit (UseEntityFrameworkOutbox<CertificateDbContext>, retry intervals 1/5/30s). Smoke unit test: renderer returns byte[] starting with %PDF-.",
-      "files": [
-        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Storage/AzureBlobPdfStorage.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Pdf/QuestPdfCertificateRenderer.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Pdf/QrCodeGenerator.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/DependencyInjection.cs"
-      ],
-      "depends_on": ["T3"],
-      "branch": "feature/cert-T5-pdf-blob",
-      "worktree": ".claude-worktrees/T5-cert-pdf",
-      "timeout_minutes": 60,
-      "acceptance": [
-        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/LMS.CertificateService.Infrastructure.csproj"
-      ]
-    },
-    {
-      "id": "T6",
-      "agent": "backend",
-      "title": "CourseCompletedConsumer (idempotent issuance + outbox publish)",
-      "spec": "Per contracts.md section 3 publish flow. CourseCompletedConsumer in Infrastructure/Consumers/. Inbox dedupe relies on filtered unique index (TenantId, UserId, CourseId) WHERE revoked_at IS NULL — catch DbUpdateException unique-violation as no-op. Steps: set CurrentTenantId from msg.TenantId, query existing active cert, if none generate Id+CertificateNumber+VerificationCode, render via ICertificatePdfRenderer with placeholder profile (Learner / Course / TenantDisplayName from config), upload via IPdfStorage, insert row, outbox-publish CertificateIssued, SaveChangesAsync. Single transaction. Reads VerificationBaseUrl + DefaultIssuerName from IConfiguration.",
-      "files": [
-        "src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/Consumers/CourseCompletedConsumer.cs"
-      ],
-      "depends_on": ["T1", "T4", "T5"],
-      "branch": "feature/cert-T6-consumer",
-      "worktree": ".claude-worktrees/T6-cert-consumer",
-      "timeout_minutes": 45,
-      "acceptance": [
-        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Infrastructure/LMS.CertificateService.Infrastructure.csproj"
-      ]
-    },
-    {
-      "id": "T7",
-      "agent": "backend",
-      "title": "Api: endpoints + Program.cs + tenant middleware + verify (anonymous)",
-      "spec": "Per contracts.md section 7. Map endpoints in CertificateEndpoints.MapCertificateEndpoints(WebApplication): GET /api/certificates/{id}, GET /api/certificates/me (optional ?courseId), GET /api/certificates/{id}/pdf (FileStreamResult application/pdf via IPdfStorage.OpenReadAsync; 410 if revoked; owner-or-admin authz), POST /api/certificates/{id}/revoke (admin-only via ctx.IsInRole), GET /verify/{verificationCode} (anonymous; uses _db.Certificates.IgnoreQueryFilters().FirstOrDefaultAsync; returns CertificateVerificationDto only — no PII; 410 if revoked). Program.cs: AddServiceDefaults, AddNpgsqlDbContext, AddBlobs, AddMassTransit (consumers from Infrastructure assembly), AddFeatureManagement, AddCertificateInfrastructure, UseMiddleware<TenantMiddleware> only on /api/certificates branch via UseWhen — verify path must NOT require tenant. RFC7807 ProblemDetails for all errors with extensions.code per contracts.md.",
-      "files": [
-        "src/services/LMS.CertificateService/LMS.CertificateService.Api/Endpoints/CertificateEndpoints.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Api/Endpoints/VerifyEndpoints.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Api/Program.cs",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Api/appsettings.json",
-        "src/services/LMS.CertificateService/LMS.CertificateService.Api/appsettings.Development.json"
-      ],
-      "depends_on": ["T3", "T4", "T5"],
-      "branch": "feature/cert-T7-api",
-      "worktree": ".claude-worktrees/T7-cert-api",
-      "timeout_minutes": 60,
-      "acceptance": [
-        "dotnet build src/services/LMS.CertificateService/LMS.CertificateService.Api/LMS.CertificateService.Api.csproj"
-      ]
-    },
-    {
-      "id": "T8",
       "agent": "gateway-ops",
-      "title": "AppHost wiring for CertificateService + storage blob container",
-      "spec": "Edit src/LMS.AppHost/Program.cs per contracts.md section 8. Replace commented `// var certificateDb` line with `var certificateDb = postgres.AddDatabase(\"lms-certificate\");`. Add `var certificatePdfs = storage.AddBlobs(\"certificate-pdfs\");` near the existing storage definition. Add certificate-migrator + certificate project blocks with WaitForCompletion(certificateMigrator) and WaitFor(certificatePdfs); register `gateway.WithReference(certificate);`. Confirm gateway appsettings.json already has `certificate` and `verify` routes — DO NOT modify. No other changes.",
+      "title": "AppHost wiring: notifications worker + MailHog container + redis ref",
+      "spec": "Edit src/LMS.AppHost/Program.cs per contracts.md section 5. Add MailHog container resource (`mailhog/mailhog:v1.0.1`) with named endpoints `ui` (8025) and `smtp` (1025 tcp). Add `LMS_NotificationWorker` project block with `WithReference(rabbitmq)`, `WithReference(redis)`, `WithEnvironment Smtp__Host` from mail smtp endpoint, `WithEnvironment Smtp__Port=1025`, `WaitFor(rabbitmq)`, `WaitFor(redis)`, `WaitFor(mail)`. Aspire resource name MUST be `notifications` (matches docs/architecture.md). NO gateway changes — worker has no HTTP. Build succeeds.",
       "files": [
         "src/LMS.AppHost/Program.cs"
       ],
       "depends_on": ["T2"],
-      "branch": "feature/cert-T8-apphost",
-      "worktree": ".claude-worktrees/T8-cert-apphost",
+      "branch": "feature/notif-T5-apphost",
+      "worktree": ".claude-worktrees/T5-notif-apphost",
       "timeout_minutes": 20,
       "acceptance": [
         "dotnet build src/LMS.AppHost/LMS.AppHost.csproj"
       ]
     },
     {
-      "id": "T9",
-      "agent": "tester",
-      "title": "Integration + architecture + contract tests",
-      "spec": "Per contracts.md section 10. Add tests/LMS.IntegrationTests/CertificateService/ with Testcontainers Postgres + Azurite + RabbitMQ; reuse xunit-integration patterns. Cover: tenant isolation (A vs B 404/empty), CourseCompletedConsumer issues exactly once + idempotent on re-deliver + no-op when active cert exists + new issuance allowed after revoke, GET /pdf streams %PDF- + 410 when revoked, POST /revoke admin-only (instructor=403, double-revoke=409), GET /verify/{code} anonymous returns no PII + 410 on revoked + 404 on unknown. Architecture tests in LMS.ArchitectureTests: Certificate inherits TenantEntity, CertificateDbContext applies global TenantId filter, Api project does not reference Microsoft.AspNetCore.Authentication.JwtBearer, only one method (named VerifyAsync) calls IgnoreQueryFilters. Contract test in LMS.ContractTests: CertificateIssued shape exactly matches spec.",
+      "id": "T6",
+      "agent": "backend",
+      "title": "Implement 12 MassTransit consumers + Program.cs DI wiring",
+      "spec": "Per contracts.md section 2. Implement one IConsumer<T> per row in Consumers/ folder. Common base class `NotificationConsumerBase<TEvent>` provides: (a) idempotency claim via IIdempotencyStore using `notif:dedupe:{ConsumerType}:{key}` (key = EventId if present else MessageContext.MessageId), (b) recipient resolution via IUserContactCache (cache miss → log + drop + increment notifications.dropped{reason=cache-miss}), (c) template render via ITemplateRenderer with model factory delegate, (d) IEmailSender.SendAsync, (e) metrics emission. UserRegisteredConsumer is special — it WRITES to IUserContactCache before/after sending welcome email. LessonCompletedConsumer is gated by FeatureFlag `Notifications.LessonProgressEmail` (default false → drop with reason=disabled). CourseArchivedConsumer Phase 1 sends ONLY to instructor (no fan-out). ContentProcessing consumers use new UploadedBy field from T1. Wire all consumers via `x.AddConsumers(Assembly.GetExecutingAssembly())` in Program.cs along with MassTransit retry config (`Immediate(3); Interval(3, 30s)`), Redis registration via `builder.AddRedisClient(\"redis\")`, options validation, OTEL meter `LMS.NotificationWorker`.",
       "files": [
-        "tests/LMS.IntegrationTests/CertificateService/Fixtures/CertificateApiFactory.cs",
-        "tests/LMS.IntegrationTests/CertificateService/CourseCompletedConsumerTests.cs",
-        "tests/LMS.IntegrationTests/CertificateService/CertificateEndpointsTests.cs",
-        "tests/LMS.IntegrationTests/CertificateService/VerifyEndpointTests.cs",
-        "tests/LMS.IntegrationTests/CertificateService/RevokeEndpointTests.cs",
-        "tests/LMS.IntegrationTests/CertificateService/TenantIsolationTests.cs",
-        "tests/LMS.ArchitectureTests/CertificateServiceArchitectureTests.cs",
-        "tests/LMS.ContractTests/CertificateIssuedContractTests.cs"
+        "src/services/LMS.NotificationWorker/Consumers/NotificationConsumerBase.cs",
+        "src/services/LMS.NotificationWorker/Consumers/UserRegisteredConsumer.cs",
+        "src/services/LMS.NotificationWorker/Consumers/UserDeactivatedConsumer.cs",
+        "src/services/LMS.NotificationWorker/Consumers/CoursePublishedConsumer.cs",
+        "src/services/LMS.NotificationWorker/Consumers/CourseArchivedConsumer.cs",
+        "src/services/LMS.NotificationWorker/Consumers/UserEnrolledConsumer.cs",
+        "src/services/LMS.NotificationWorker/Consumers/EnrollmentCancelledConsumer.cs",
+        "src/services/LMS.NotificationWorker/Consumers/LessonCompletedConsumer.cs",
+        "src/services/LMS.NotificationWorker/Consumers/CourseCompletedConsumer.cs",
+        "src/services/LMS.NotificationWorker/Consumers/ContentProcessingCompletedConsumer.cs",
+        "src/services/LMS.NotificationWorker/Consumers/ContentProcessingFailedConsumer.cs",
+        "src/services/LMS.NotificationWorker/Consumers/AssessmentSubmittedConsumer.cs",
+        "src/services/LMS.NotificationWorker/Consumers/CertificateIssuedConsumer.cs",
+        "src/services/LMS.NotificationWorker/Program.cs",
+        "src/services/LMS.NotificationWorker/Observability/NotificationMetrics.cs"
       ],
-      "depends_on": ["T6", "T7", "T8"],
-      "branch": "feature/cert-T9-tests",
-      "worktree": ".claude-worktrees/T9-cert-tests",
-      "timeout_minutes": 75,
+      "depends_on": ["T1", "T3", "T4"],
+      "branch": "feature/notif-T6-consumers",
+      "worktree": ".claude-worktrees/T6-notif-consumers",
+      "timeout_minutes": 90,
       "acceptance": [
-        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~CertificateService",
-        "dotnet test tests/LMS.ArchitectureTests/LMS.ArchitectureTests.csproj",
-        "dotnet test tests/LMS.ContractTests/LMS.ContractTests.csproj --filter FullyQualifiedName~CertificateIssued"
+        "dotnet build src/services/LMS.NotificationWorker/LMS.NotificationWorker.csproj"
+      ]
+    },
+    {
+      "id": "T7",
+      "agent": "haiku-helper",
+      "title": "Unit tests for primitives + per-template fixtures",
+      "spec": "Create new test project `tests/LMS.NotificationWorker.UnitTests/`. Add to LMS.slnx. References LMS.NotificationWorker. Tests per contracts.md section 7 unit list: ScribanTemplateRenderer auto-encoding test (passes `<script>` in input, asserts encoded in HTML output); language fallback test; RedisIdempotencyStore TryClaim NX semantics (use Testcontainers Redis or StackExchange.Redis Memory fake); per-template render smoke (one xunit Theory case per templateId, asserts subject + body non-empty + contains key field).",
+      "files": [
+        "tests/LMS.NotificationWorker.UnitTests/LMS.NotificationWorker.UnitTests.csproj",
+        "tests/LMS.NotificationWorker.UnitTests/ScribanTemplateRendererTests.cs",
+        "tests/LMS.NotificationWorker.UnitTests/RedisIdempotencyStoreTests.cs",
+        "tests/LMS.NotificationWorker.UnitTests/TemplateRenderSmokeTests.cs",
+        "LMS.slnx"
+      ],
+      "depends_on": ["T6"],
+      "branch": "feature/notif-T7-unit-tests",
+      "worktree": ".claude-worktrees/T7-notif-unit",
+      "timeout_minutes": 45,
+      "acceptance": [
+        "dotnet test tests/LMS.NotificationWorker.UnitTests/LMS.NotificationWorker.UnitTests.csproj"
+      ]
+    },
+    {
+      "id": "T8",
+      "agent": "tester",
+      "title": "Integration tests with RabbitMQ + Redis + MailHog + harness",
+      "spec": "Add `tests/LMS.IntegrationTests/NotificationWorker/` per contracts.md section 7. Use Testcontainers for RabbitMQ + Redis + MailHog (mailhog/mailhog:v1.0.1, expose 8025 for API, 1025 for SMTP). MassTransit InMemoryHarness wraps the worker host. Cover: (a) one-shot send for each of the 12 events except LessonCompleted (= no-send); (b) idempotency: re-publish same message → only one mail in MailHog; (c) UserRegistered populates contact cache → subsequent UserEnrolled for same (TenantId,UserId) finds cached email; (d) cache-miss path: publish UserEnrolled for unknown user → no mail, metric dropped++; (e) tenant tag propagation: two events for distinct TenantIds → assert MailHog has two mails AND OTEL test exporter has matching tenant_id tags; (f) LessonCompleted with feature flag false → no send; with flag true → send. Use MailHog HTTP API (`GET /api/v2/messages`) for assertions. ArchitectureTests in `tests/LMS.ArchitectureTests/`: NotificationWorker doesn't reference EF Core; doesn't reference any other LMS.*Service.* project; no HttpClient with BaseAddress targeting LMS service. ContractTests: regression test that compiles a hard-coded list of consumed events matching docs/events.md routing table.",
+      "files": [
+        "tests/LMS.IntegrationTests/NotificationWorker/Fixtures/NotificationWorkerFactory.cs",
+        "tests/LMS.IntegrationTests/NotificationWorker/Fixtures/MailHogClient.cs",
+        "tests/LMS.IntegrationTests/NotificationWorker/UserRegisteredFlowTests.cs",
+        "tests/LMS.IntegrationTests/NotificationWorker/EnrollmentFlowTests.cs",
+        "tests/LMS.IntegrationTests/NotificationWorker/CompletionAndCertificateTests.cs",
+        "tests/LMS.IntegrationTests/NotificationWorker/IdempotencyTests.cs",
+        "tests/LMS.IntegrationTests/NotificationWorker/CacheMissTests.cs",
+        "tests/LMS.IntegrationTests/NotificationWorker/TenantTagPropagationTests.cs",
+        "tests/LMS.IntegrationTests/NotificationWorker/FeatureFlagTests.cs",
+        "tests/LMS.ArchitectureTests/NotificationWorkerArchitectureTests.cs",
+        "tests/LMS.ContractTests/NotificationWorkerConsumerListTests.cs"
+      ],
+      "depends_on": ["T6"],
+      "branch": "feature/notif-T8-integration",
+      "worktree": ".claude-worktrees/T8-notif-integration",
+      "timeout_minutes": 90,
+      "acceptance": [
+        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~NotificationWorker",
+        "dotnet test tests/LMS.ArchitectureTests/LMS.ArchitectureTests.csproj --filter FullyQualifiedName~NotificationWorker",
+        "dotnet test tests/LMS.ContractTests/LMS.ContractTests.csproj --filter FullyQualifiedName~NotificationWorker"
+      ]
+    },
+    {
+      "id": "T9",
+      "agent": "security-auditor",
+      "title": "Tenant + PII audit on worker",
+      "spec": "Run /audit-tenant scoped to src/services/LMS.NotificationWorker. Specific checks: (a) every consumer reads TenantId from the message and stamps it on logs/metrics; (b) idempotency keys include TenantId OR EventId (which is globally unique) — no cross-tenant collisions possible; (c) UserContactCache keys include TenantId prefix; (d) Scriban templates auto-encode user input (test `<script>` injection); (e) no JWT / authorization header parsing exists in worker; (f) no HttpClient with BaseAddress to other LMS services; (g) SmtpOptions password / SmtpOptions credentials never logged (check ILogger usages); (h) MailHog only used in Development environment — production must not emit to it. Produce findings; T11 reviewer must address any HIGH severity items before merge.",
+      "files": [],
+      "depends_on": ["T8"],
+      "branch": "feature/notif-T9-audit",
+      "worktree": ".claude-worktrees/T9-notif-audit",
+      "timeout_minutes": 30,
+      "acceptance": [
+        "test -d .claude/audits || mkdir -p .claude/audits"
       ]
     },
     {
       "id": "T10",
-      "agent": "security-auditor",
-      "title": "Tenant-isolation + verify-endpoint security audit",
-      "spec": "Run /audit-tenant scoped to src/services/LMS.CertificateService. Specific checks: (a) every Certificate read except VerifyAsync goes through tenant-filtered DbSet (no IgnoreQueryFilters elsewhere); (b) VerifyAsync response contains no UserId, TenantId, PdfStorageKey, RevocationReason; (c) GET /pdf enforces owner-or-admin and not just tenant scope; (d) POST /revoke is admin-only, not instructor; (e) CourseCompletedConsumer sets CurrentTenantId from msg.TenantId before any DB access; (f) blob keys include tenantId so cross-tenant blob enumeration is detectable in logs; (g) no Authorization header or X-User-Id read on /verify route. Produce findings; T11 reviewer must address any HIGH severity items before merge.",
+      "agent": "reviewer",
+      "title": "Final review against contracts.md + absolute rules",
+      "spec": "Run /code-reviewer on T1–T9 changes. Mandatory: (1) NotificationWorker has NO DbContext / EF Core dep; (2) NO new event records added beyond T1's additive UploadedBy; (3) NO direct HTTP between services (no HttpClient targeting LMS); (4) MailKit used (not SendGrid SDK directly Phase 1); (5) all 12 consumer classes exist and are registered; (6) idempotency wired on every consumer; (7) Aspire resource name 'notifications' matches docs/architecture.md; (8) feature flag 'Notifications.LessonProgressEmail' default false; (9) every email log entry includes TenantId; (10) no JWT validation in worker. Address all HIGH-severity findings from T9. Block merge on contract drift.",
       "files": [],
-      "depends_on": ["T9"],
-      "branch": "feature/cert-T10-audit",
-      "worktree": ".claude-worktrees/T10-cert-audit",
+      "depends_on": ["T7", "T9"],
+      "branch": "feature/notif-T10-review",
+      "worktree": ".claude-worktrees/T10-notif-review",
       "timeout_minutes": 30,
       "acceptance": [
-        "test -f .claude/audits/cert-tenant-audit.md || true"
+        "dotnet build LMS.slnx",
+        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~NotificationWorker"
       ]
     },
     {
       "id": "T11",
-      "agent": "reviewer",
-      "title": "Final review against contracts.md + absolute rules",
-      "spec": "Run /code-reviewer against all CertificateService changes (T1–T10). Mandatory checks: (1) Certificate inherits TenantEntity; (2) global EF filter present; (3) NO direct HTTP between services (no HttpClient targeting another LMS service); (4) JWT validated only at gateway, no AddJwtBearer in Api; (5) CertificateIssued declared in LMS.Contracts (not inline); (6) PDF generated via QuestPDF only (grep iTextSharp, Puppeteer, PdfSharp — must be absent); (7) port 5108 set in launchSettings; (8) Aspire resource name 'certificate' matches gateway cluster; (9) verify endpoint anonymous and PII-free; (10) revoke is admin-only. Address all HIGH-severity findings from T10. Block merge on any contract drift.",
-      "files": [],
+      "agent": "docs-writer",
+      "title": "Sync docs/notification.md + docs/events.md",
+      "spec": "Update docs/notification.md to list all 12 Phase-1 consumers (currently lists only 4) per contracts.md section 2 table. Reflect MailKit + Scriban + Redis idempotency choices. Document Phase-1 cache-miss-drop strategy and the 3 deferred items (Vietnamese templates, course-archived fan-out, per-tenant rate limit). Update docs/events.md routing table to include UploadedBy field on ContentProcessingCompleted/Failed and ensure CertificateIssued is listed (already locked in current events.md). Add operations runbook section covering: (a) DLQ inspection (`_error` queue), (b) MailHog UI access in dev (port 8025), (c) feature flag toggle for lesson-progress emails.",
+      "files": [
+        "docs/notification.md",
+        "docs/events.md"
+      ],
       "depends_on": ["T10"],
-      "branch": "feature/cert-T11-review",
-      "worktree": ".claude-worktrees/T11-cert-review",
-      "timeout_minutes": 30,
+      "branch": "feature/notif-T11-docs",
+      "worktree": ".claude-worktrees/T11-notif-docs",
+      "timeout_minutes": 25,
       "acceptance": [
-        "dotnet build LMS.slnx",
-        "dotnet test tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj --filter FullyQualifiedName~CertificateService"
+        "test -f docs/notification.md"
       ]
     }
   ]

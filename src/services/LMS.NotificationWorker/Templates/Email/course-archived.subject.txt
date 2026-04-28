@@ -1,0 +1,1 @@
+Your course "{{ course_name }}" has been archived

@@ -1,0 +1,7 @@
+Your course is now live!
+
+Congratulations! Your course "{{ course_name }}" has been successfully published and is now available to learners.
+
+View your course here: {{ course_url }}
+
+Keep creating great content!
