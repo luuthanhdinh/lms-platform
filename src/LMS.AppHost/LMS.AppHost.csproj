@@ -27,5 +27,7 @@
     <ProjectReference Include="../services/LMS.ContentService/LMS.ContentService.Worker/LMS.ContentService.Worker.csproj" />
     <ProjectReference Include="..\services\LMS.EnrollmentService\LMS.EnrollmentService.Api\LMS.EnrollmentService.Api.csproj" />
     <ProjectReference Include="..\services\LMS.EnrollmentService\LMS.EnrollmentService.Migrator\LMS.EnrollmentService.Migrator.csproj" />
+    <ProjectReference Include="..\services\LMS.ProgressService\LMS.ProgressService.Api\LMS.ProgressService.Api.csproj" />
+    <ProjectReference Include="..\services\LMS.ProgressService\LMS.ProgressService.Migrator\LMS.ProgressService.Migrator.csproj" />
   </ItemGroup>
 </Project>
