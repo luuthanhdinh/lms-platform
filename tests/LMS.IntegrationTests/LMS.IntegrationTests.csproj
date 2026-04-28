@@ -14,6 +14,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.*" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.*" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.*" />
+    <PackageReference Include="MassTransit.TestFramework" Version="8.*" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.*" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\gateway\LMS.Gateway\LMS.Gateway.csproj" />
@@ -22,5 +24,8 @@
     <ProjectReference Include="..\..\src\services\LMS.CourseService\LMS.CourseService.Domain\LMS.CourseService.Domain.csproj" />
     <ProjectReference Include="..\..\src\services\LMS.ContentService\LMS.ContentService.Domain\LMS.ContentService.Domain.csproj" />
     <ProjectReference Include="..\..\src\services\LMS.ContentService\LMS.ContentService.Api\LMS.ContentService.Api.csproj" />
+    <ProjectReference Include="..\..\src\services\LMS.EnrollmentService\LMS.EnrollmentService.Api\LMS.EnrollmentService.Api.csproj" />
+    <ProjectReference Include="..\..\src\services\LMS.EnrollmentService\LMS.EnrollmentService.Domain\LMS.EnrollmentService.Domain.csproj" />
+    <ProjectReference Include="..\..\src\LMS.Contracts\LMS.Contracts.csproj" />
   </ItemGroup>
 </Project>

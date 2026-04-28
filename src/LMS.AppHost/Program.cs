@@ -13,7 +13,7 @@ var identityDb    = postgres.AddDatabase("lms-identity");
 var courseDb      = postgres.AddDatabase("lms-courses");
 // var courseDb      = postgres.AddDatabase("lms_courses");
 var contentDb     = mongo.AddDatabase("lms-content");
-// var enrollmentDb  = postgres.AddDatabase("lms_enrollment");
+var enrollmentDb  = postgres.AddDatabase("lms-enrollments");
 // var progressDb    = postgres.AddDatabase("lms_progress");
 // var assessmentDb  = postgres.AddDatabase("lms_assessment");
 // var certificateDb = postgres.AddDatabase("lms_certificate");
@@ -68,6 +68,18 @@ var contentWorker = builder.AddProject<Projects.LMS_ContentService_Worker>("cont
     .WaitFor(content);
 
 gateway.WithReference(content);
+
+// EnrollmentService
+var enrollmentMigrator = builder.AddProject<Projects.LMS_EnrollmentService_Migrator>("enrollment-migrator")
+    .WithReference(enrollmentDb)
+    .WaitFor(enrollmentDb);
+
+var enrollment = builder.AddProject<Projects.LMS_EnrollmentService_Api>("enrollment")
+    .WithReference(enrollmentDb)
+    .WithReference(rabbitmq)
+    .WaitForCompletion(enrollmentMigrator);
+
+gateway.WithReference(enrollment);
 
 // Services — uncomment as each service project is scaffolded
 
