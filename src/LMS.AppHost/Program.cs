@@ -9,7 +9,7 @@ var keycloak = builder.AddKeycloak("keycloak")
                       .WithRealmImport("./keycloak/lms-realm.json");
 
 // Databases — uncomment as each service is scaffolded
-// var identityDb    = postgres.AddDatabase("lms_identity");
+var identityDb    = postgres.AddDatabase("lms-identity");
 // var courseDb      = postgres.AddDatabase("lms_courses");
 // var contentDb     = mongo.AddDatabase("lms_content");
 // var enrollmentDb  = postgres.AddDatabase("lms_enrollment");
@@ -18,15 +18,25 @@ var keycloak = builder.AddKeycloak("keycloak")
 // var certificateDb = postgres.AddDatabase("lms_certificate");
 
 // Gateway — validates JWTs, forwards X-User-Id / X-Tenant-Id / X-Roles
-builder.AddProject<Projects.LMS_Gateway>("gateway")
+var gateway = builder.AddProject<Projects.LMS_Gateway>("gateway")
     .WithReference(keycloak)
     .WithReference(redis)
     .WaitFor(keycloak)
     .WaitFor(redis);
 
+// IdentityService
+var identityMigrator = builder.AddProject<Projects.LMS_IdentityService_Migrator>("identity-migrator")
+    .WithReference(identityDb)
+    .WaitFor(identityDb);
+
+var identity = builder.AddProject<Projects.LMS_IdentityService_Api>("identity")
+    .WithReference(identityDb)
+    .WithReference(rabbitmq)
+    .WaitForCompletion(identityMigrator);
+
+gateway.WithReference(identity);
+
 // Services — uncomment as each service project is scaffolded
-// builder.AddProject<Projects.LMS_IdentityService>("identity")
-//     .WithReference(identityDb).WithReference(rabbitmq).WithReference(keycloak);
 
 // builder.AddProject<Projects.LMS_CourseService>("courses")
 //     .WithReference(courseDb).WithReference(rabbitmq);
