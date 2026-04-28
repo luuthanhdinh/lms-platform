@@ -324,31 +324,24 @@ public class Certificate : TenantEntity
 {
     public Guid UserId { get; set; }
     public Guid CourseId { get; set; }
-    public Guid VerificationCode { get; set; } = Guid.NewGuid();
-    public string PdfS3Key { get; set; } = default!;
-    public DateTimeOffset IssuedAt { get; set; } = DateTimeOffset.UtcNow;
+    public string CertificateNumber { get; set; } = default!;  // CERT-{yyyyMM}-{8-char hex}
+    public Guid VerificationCode { get; set; }
+    public string? PdfStorageKey { get; set; }  // Azure Blob Storage key
+    public CertificateStatus Status { get; set; }  // Active, Revoked
+    public DateTimeOffset IssuedAt { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
     public string? RevocationReason { get; set; }
-
-    // Phase 4 Open Badges 3.0 fields (null until Phase 4)
-    public string? CredentialJwt { get; set; }
-    public Guid? CredentialId { get; set; }
-    public int? StatusListIndex { get; set; }
-    public BlockchainAnchor? BlockchainAnchor { get; set; }
+    public string? CourseName { get; set; }  // denormalized from CourseCompleted event
+    public string? LearnerName { get; set; }  // denormalized from CourseCompleted event
 }
 
-// Owned entity — no separate table
-public class BlockchainAnchor
-{
-    public string? TxHash { get; set; }
-    public long? BlockNumber { get; set; }
-    public string? Network { get; set; }
-    public DateTimeOffset? AnchoredAt { get; set; }
-    public AnchorStatus Status { get; set; } = AnchorStatus.NotAnchored;
-}
-
-public enum AnchorStatus { NotAnchored, Pending, Confirmed, Failed }
+public enum CertificateStatus { Active, Revoked }
 ```
+
+**Schema:** `certificates`. **Indexes:**
+- Unique `(TenantId, UserId, CourseId)` (one certificate per student per course)
+- `(TenantId, VerificationCode)` for public `/verify/{code}` endpoint
+- `(TenantId, UserId, Status)` for listing user's active/revoked certificates
 
 ---
 

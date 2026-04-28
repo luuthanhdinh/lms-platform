@@ -19,44 +19,90 @@ var keycloak  = builder.AddKeycloakContainer("keycloak")
                        .WithRealmImport("./keycloak/lms-realm.json");
 
 // Databases
-var identityDb    = postgres.AddDatabase("lms_identity");
-var courseDb      = postgres.AddDatabase("lms_courses");
-var contentDb     = mongo.AddDatabase("lms_content");
-var enrollmentDb  = postgres.AddDatabase("lms_enrollment");
-var progressDb    = postgres.AddDatabase("lms_progress");
-var assessmentDb  = postgres.AddDatabase("lms_assessment");
-var certificateDb = postgres.AddDatabase("lms_certificate");
+var identityDb    = postgres.AddDatabase("lms-identity");
+var courseDb      = postgres.AddDatabase("lms-courses");
+var contentDb     = mongo.AddDatabase("lms-content");
+var enrollmentDb  = postgres.AddDatabase("lms-enrollments");
+var progressDb    = postgres.AddDatabase("lms-progress");
+var assessmentDb  = postgres.AddDatabase("lms-assessment");
+var certificateDb = postgres.AddDatabase("lms-certificate");
 
-// Services
-builder.AddProject<Projects.LMS_Gateway>("gateway")
-    .WithReference(keycloak).WithReference(redis);
+// Storage
+var storage = builder.AddAzureStorage("storage").RunAsEmulator();
+var contentBlobs = storage.AddBlobs("content-blobs");
+var certificatePdfs = storage.AddBlobs("certificate-pdfs");
 
-builder.AddProject<Projects.LMS_IdentityService>("identity")
-    .WithReference(identityDb).WithReference(rabbitmq).WithReference(keycloak);
+// Gateway — JWT validation, rate limiting, header forwarding
+var gateway = builder.AddProject<Projects.LMS_Gateway>("gateway")
+    .WithReference(keycloak).WithReference(redis)
+    .WaitFor(keycloak).WaitFor(redis);
 
-builder.AddProject<Projects.LMS_CourseService>("courses")
-    .WithReference(courseDb).WithReference(rabbitmq);
+// IdentityService
+var identityMigrator = builder.AddProject<Projects.LMS_IdentityService_Migrator>("identity-migrator")
+    .WithReference(identityDb).WaitFor(identityDb);
+var identity = builder.AddProject<Projects.LMS_IdentityService_Api>("identity")
+    .WithReference(identityDb).WithReference(rabbitmq).WithReference(keycloak)
+    .WaitForCompletion(identityMigrator);
+gateway.WithReference(identity);
 
-builder.AddProject<Projects.LMS_ContentService>("content")
-    .WithReference(contentDb).WithReference(rabbitmq);
+// CourseService
+var courseMigrator = builder.AddProject<Projects.LMS_CourseService_Migrator>("course-migrator")
+    .WithReference(courseDb).WaitFor(courseDb);
+var course = builder.AddProject<Projects.LMS_CourseService_Api>("courses")
+    .WithReference(courseDb).WithReference(rabbitmq)
+    .WaitForCompletion(courseMigrator);
+gateway.WithReference(course);
 
-builder.AddProject<Projects.LMS_EnrollmentService>("enrollment")
-    .WithReference(enrollmentDb).WithReference(rabbitmq);
+// ContentService + ContentService.Worker
+var content = builder.AddProject<Projects.LMS_ContentService_Api>("content")
+    .WithReference(contentDb).WithReference(rabbitmq).WithReference(contentBlobs)
+    .WaitFor(contentDb).WaitFor(contentBlobs).WaitFor(rabbitmq);
+var contentWorker = builder.AddProject<Projects.LMS_ContentService_Worker>("content-worker")
+    .WithReference(contentDb).WithReference(rabbitmq).WithReference(contentBlobs)
+    .WaitFor(content);
+gateway.WithReference(content);
 
-builder.AddProject<Projects.LMS_ProgressService>("progress")
-    .WithReference(progressDb).WithReference(rabbitmq);
+// EnrollmentService
+var enrollmentMigrator = builder.AddProject<Projects.LMS_EnrollmentService_Migrator>("enrollment-migrator")
+    .WithReference(enrollmentDb).WaitFor(enrollmentDb);
+var enrollment = builder.AddProject<Projects.LMS_EnrollmentService_Api>("enrollment")
+    .WithReference(enrollmentDb).WithReference(rabbitmq)
+    .WaitForCompletion(enrollmentMigrator);
+gateway.WithReference(enrollment);
 
-builder.AddProject<Projects.LMS_AssessmentService>("assessment")
-    .WithReference(assessmentDb).WithReference(rabbitmq).WithReference(redis);
+// ProgressService
+var progressMigrator = builder.AddProject<Projects.LMS_ProgressService_Migrator>("progress-migrator")
+    .WithReference(progressDb).WaitFor(progressDb);
+var progress = builder.AddProject<Projects.LMS_ProgressService_Api>("progress")
+    .WithReference(progressDb).WithReference(rabbitmq)
+    .WaitForCompletion(progressMigrator);
+gateway.WithReference(progress);
 
-builder.AddProject<Projects.LMS_CertificateService>("certificate")
-    .WithReference(certificateDb).WithReference(rabbitmq);
+// AssessmentService
+var assessmentMigrator = builder.AddProject<Projects.LMS_AssessmentService_Migrator>("assessment-migrator")
+    .WithReference(assessmentDb).WaitFor(assessmentDb);
+var assessment = builder.AddProject<Projects.LMS_AssessmentService_Api>("assessment")
+    .WithReference(assessmentDb).WithReference(rabbitmq).WithReference(redis)
+    .WaitForCompletion(assessmentMigrator);
+gateway.WithReference(assessment);
 
-builder.AddProject<Projects.LMS_NotificationWorker>("notifications")
-    .WithReference(rabbitmq);
+// CertificateService
+var certificateMigrator = builder.AddProject<Projects.LMS_CertificateService_Migrator>("certificate-migrator")
+    .WithReference(certificateDb).WaitFor(certificateDb);
+var certificate = builder.AddProject<Projects.LMS_CertificateService_Api>("certificate")
+    .WithReference(certificateDb).WithReference(rabbitmq).WithReference(certificatePdfs)
+    .WaitForCompletion(certificateMigrator).WaitFor(certificatePdfs);
+gateway.WithReference(certificate);
 
-// Frontend — React app served via Vite dev server in development
-// In production, built output is served by a separate static host or CDN
+// NotificationWorker — event consumer, sends emails via SMTP/MailHog
+var mailhog = builder.AddContainer("mailhog", "mailhog/mailhog", "latest")
+    .WithHttpEndpoint(1025, name: "smtp", port: 1025)
+    .WithHttpEndpoint(8025, name: "http");
+var notifications = builder.AddProject<Projects.LMS_NotificationWorker>("notifications")
+    .WithReference(rabbitmq).WithReference(redis).WithReference(mailhog)
+    .WaitFor(rabbitmq).WaitFor(redis).WaitFor(mailhog);
+
+// Frontend — React app via Vite dev server
 var frontend = builder.AddNpmApp("frontend", "../frontend")
     .WithReference(gateway)
     .WithEnvironment("VITE_API_BASE_URL", gateway.GetEndpoint("http"))

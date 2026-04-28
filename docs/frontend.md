@@ -11,7 +11,7 @@ or touching authentication.
 |---|---|
 | Framework | React 19 + TypeScript |
 | Build | Vite |
-| Routing | TanStack Router (file-based) |
+| Routing | TanStack Router (declarative, not file-based) |
 | Data fetching | TanStack Query v5 |
 | Global state | Zustand |
 | Auth | keycloak-js (in-memory only — never localStorage) |
@@ -148,29 +148,27 @@ export function ProtectedRoute({ children, roles }: Props) {
 
 ## API Client
 
-### Rule: all API calls go through this client — never create Axios instances elsewhere
+### Rule: all API calls go through a central client — never create Axios instances elsewhere
 
 ```typescript
 // src/lib/api-client.ts
 import axios from 'axios';
 import keycloak from './keycloak';
 
+// Authenticated client — attaches JWT on every request
 export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,  // points to YARP gateway
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach JWT on every request (from keycloak-js in-memory token)
 apiClient.interceptors.request.use(async config => {
   if (keycloak.token) {
-    // Refresh token if it expires in < 30 seconds
     await keycloak.updateToken(30).catch(() => keycloak.login());
     config.headers.Authorization = `Bearer ${keycloak.token}`;
   }
   return config;
 });
 
-// Redirect to login on 401
 apiClient.interceptors.response.use(
   res => res,
   err => {
@@ -178,6 +176,12 @@ apiClient.interceptors.response.use(
     return Promise.reject(err);
   }
 );
+
+// Public client — no auth header; used only for /verify/{code}
+export const publicApiClient = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL,
+  headers: { 'Content-Type': 'application/json' },
+});
 ```
 
 ---
