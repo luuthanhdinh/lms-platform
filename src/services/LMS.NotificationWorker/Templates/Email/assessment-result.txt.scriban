@@ -1,0 +1,11 @@
+Assessment Result: {{ assessment_name }}
+
+Your score: {{ score }}%
+Result: {{ passed ? "PASSED" : "FAILED" }}
+
+{{ if !passed && retake_url != null }}
+Don't give up! Review the material and try again.
+Retake the assessment here: {{ retake_url }}
+{{ end }}
+
+{{ passed ? "Congratulations on passing!" : "Keep practicing — you can do it!" }}

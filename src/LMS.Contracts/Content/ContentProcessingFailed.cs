@@ -18,4 +18,7 @@ public sealed record ContentProcessingFailed(
     string Reason,
 
     /// <summary>UTC instant the worker gave up after exhausting all configured redelivery intervals.</summary>
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+
+    /// <summary>UserId of the person who uploaded the content.</summary>
+    Guid UploadedBy);

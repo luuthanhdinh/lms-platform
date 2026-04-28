@@ -1,0 +1,7 @@
+Your video is ready
+
+Your video "{{ content_title }}" has been successfully processed and is now available to learners.
+
+View it here: {{ content_url }}
+
+Your content is now live in your course.

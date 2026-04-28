@@ -1,0 +1,1 @@
+You're enrolled in "{{ course_name }}"

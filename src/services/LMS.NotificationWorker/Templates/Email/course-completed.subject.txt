@@ -1,0 +1,1 @@
+Congratulations! You completed "{{ course_name }}"

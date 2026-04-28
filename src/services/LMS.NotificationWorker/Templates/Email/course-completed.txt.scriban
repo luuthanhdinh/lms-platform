@@ -1,0 +1,9 @@
+Congratulations, {{ full_name }}!
+
+You have successfully completed "{{ course_name }}".
+
+{{ if certificate_issued }}
+A certificate of completion has been issued. Check your certificates dashboard to download it.
+{{ end }}
+
+Keep up the great work and explore more courses!
