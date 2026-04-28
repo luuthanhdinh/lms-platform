@@ -17,15 +17,13 @@ Smart commit current staged + relevant unstaged changes: $ARGUMENTS
    - Subject ≤ 70 chars, imperative mood, no trailing period
    - Body explains WHY (not what — diff shows that), wrapped at 72
 5. If `$ARGUMENTS` is provided, use it as the subject line.
-6. Commit via HEREDOC (preserve formatting), include co-author line:
+6. Commit via HEREDOC (preserve formatting), no co-author line:
 
    ```bash
    git commit -m "$(cat <<'EOF'
    <subject>
 
    <body>
-
-   Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
    EOF
    )"
    ```
