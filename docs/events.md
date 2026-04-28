@@ -58,6 +58,10 @@ public record UserEnrolled(
     Guid UserId, Guid CourseId, Guid TenantId,
     string PlanType, DateTimeOffset OccurredAt);
 
+public record EnrollmentCancelled(
+    Guid EventId, Guid TenantId, Guid EnrollmentId,
+    Guid UserId, Guid CourseId, DateTimeOffset OccurredAt);
+
 public record EnrollmentSuspended(
     Guid UserId, Guid CourseId, Guid TenantId,
     string Reason, DateTimeOffset OccurredAt);
@@ -257,7 +261,7 @@ public record LabSessionTerminated(
 | `CoursePublished` | CourseService | EnrollmentService (open enrolment), NotificationWorker |
 | `CourseArchived` | CourseService | EnrollmentService (suspend active enrollments), NotificationWorker |
 | `UserEnrolled` | EnrollmentService | ProgressService (seed record), CourseService (increment count), NotificationWorker |
-| `EnrollmentCancelled` | EnrollmentService | ProgressService (freeze progress), CourseService (decrement enrolment count), NotificationWorker (cancellation email) |
+| `EnrollmentCancelled` | EnrollmentService | ProgressService (freeze progress), CourseService (decrement count), NotificationWorker (cancellation email) |
 | `LessonCompleted` | ProgressService | GamificationService*, NotificationWorker |
 | `CourseCompleted` | ProgressService | CertificateService, GamificationService* |
 | `ContentUploaded` | ContentService.Api | ContentService.Worker (trigger processing pipeline) |
