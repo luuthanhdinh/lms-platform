@@ -582,8 +582,8 @@ dotnet new worker -n LMS.NotificationWorker -o src/services/LMS.NotificationWork
 find . -name "*.csproj" | xargs dotnet sln add
 
 # Frontend — scaffold React app
-npm create vite@latest frontend -- --template react-ts
-cd frontend
+npm create vite@latest src/frontend -- --template react-ts
+cd src/frontend
 npm install \
   @tanstack/react-query @tanstack/react-router \
   keycloak-js axios \

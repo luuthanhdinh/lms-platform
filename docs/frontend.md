@@ -595,7 +595,7 @@ export function ScormPlayer({ contentItemId, lessonId, courseId }: Props) {
 
 ---
 
-## Environment variables — `frontend/.env.local`
+## Environment variables — `src/frontend/.env.local`
 
 ```bash
 VITE_API_BASE_URL=http://localhost:5000         # YARP gateway
