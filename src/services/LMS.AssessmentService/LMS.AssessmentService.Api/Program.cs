@@ -8,6 +8,7 @@ using MassTransit;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
+builder.AddNpgsqlDataSource("lms-assessment");
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, HeaderTenantContext>();

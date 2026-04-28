@@ -3,16 +3,17 @@ using LMS.IdentityService.Domain.Entities;
 using LMS.IdentityService.Domain.Enums;
 using LMS.IdentityService.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.AddNpgsqlDbContext<IdentityDbContext>("lms-identity");
-
-// Stub ITenantContext for migration/seed — Guid.Empty bypasses nothing meaningful
-// since we call IgnoreQueryFilters() for existence checks
 builder.Services.AddSingleton<ITenantContext, MigratorTenantContext>();
+builder.AddNpgsqlDataSource("lms-identity");
+builder.Services.AddDbContext<IdentityDbContext>((sp, o) =>
+    o.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>()));
 
 var host = builder.Build();
+await host.StartAsync();
 
 using var scope = host.Services.CreateScope();
 var db = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
@@ -53,11 +54,7 @@ else
     logger.LogInformation("Master tenant already exists, skipping seed");
 }
 
-// Migrator is a one-shot worker — signal success and exit
-var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
-lifetime.StopApplication();
-
-await host.RunAsync();
+await host.StopAsync();
 
 // Minimal ITenantContext for migrator — bypasses global filter comparisons
 // by using Guid.Empty which will never match real tenant rows

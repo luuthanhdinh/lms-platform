@@ -1,23 +1,47 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace LMS.EnrollmentService.Infrastructure.Migrations
+namespace LMS.ProgressService.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialEnrollmentSchema : Migration
+    public partial class InitialProgressSchema : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.EnsureSchema(
-                name: "enrollments");
+                name: "progress");
+
+            migrationBuilder.CreateTable(
+                name: "course_progress",
+                schema: "progress",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    course_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    completion_percent = table.Column<float>(type: "real", nullable: false),
+                    lessons_completed = table.Column<int>(type: "integer", nullable: false),
+                    total_required_lessons = table.Column<int>(type: "integer", nullable: false),
+                    last_accessed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    completed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    course_completed_event_published = table.Column<bool>(type: "boolean", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false),
+                    tenant_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_course_progress", x => x.id);
+                });
 
             migrationBuilder.CreateTable(
                 name: "inbox_state",
-                schema: "enrollments",
+                schema: "progress",
                 columns: table => new
                 {
                     id = table.Column<long>(type: "bigint", nullable: false)
@@ -40,8 +64,30 @@ namespace LMS.EnrollmentService.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "lesson_progress",
+                schema: "progress",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    lesson_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    course_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    status = table.Column<int>(type: "integer", nullable: false),
+                    completed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    last_accessed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false),
+                    tenant_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_lesson_progress", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "outbox_state",
-                schema: "enrollments",
+                schema: "progress",
                 columns: table => new
                 {
                     outbox_id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -57,32 +103,8 @@ namespace LMS.EnrollmentService.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "enrollments",
-                schema: "enrollments",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    course_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    status = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    is_free = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
-                    enrolled_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    completed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    cancelled_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    suspended_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    suspension_reason = table.Column<string>(type: "text", nullable: true),
-                    tenant_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_enrollments", x => x.id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "outbox_message",
-                schema: "enrollments",
+                schema: "progress",
                 columns: table => new
                 {
                     sequence_number = table.Column<long>(type: "bigint", nullable: false)
@@ -114,72 +136,78 @@ namespace LMS.EnrollmentService.Infrastructure.Migrations
                     table.ForeignKey(
                         name: "fk_outbox_message_inbox_state_inbox_message_id_inbox_consumer_",
                         columns: x => new { x.inbox_message_id, x.inbox_consumer_id },
-                        principalSchema: "enrollments",
+                        principalSchema: "progress",
                         principalTable: "inbox_state",
                         principalColumns: new[] { "message_id", "consumer_id" });
                     table.ForeignKey(
                         name: "fk_outbox_message_outbox_state_outbox_id",
                         column: x => x.outbox_id,
-                        principalSchema: "enrollments",
+                        principalSchema: "progress",
                         principalTable: "outbox_state",
                         principalColumn: "outbox_id");
                 });
 
             migrationBuilder.CreateIndex(
-                name: "ix_enrollments_tenant_id_course_id_status",
-                schema: "enrollments",
-                table: "enrollments",
-                columns: new[] { "tenant_id", "course_id", "status" });
+                name: "ix_course_progress_tenant_id_course_id",
+                schema: "progress",
+                table: "course_progress",
+                columns: new[] { "tenant_id", "course_id" });
 
             migrationBuilder.CreateIndex(
-                name: "ix_enrollments_tenant_id_user_id_course_id",
-                schema: "enrollments",
-                table: "enrollments",
+                name: "ix_course_progress_tenant_id_user_id_course_id",
+                schema: "progress",
+                table: "course_progress",
                 columns: new[] { "tenant_id", "user_id", "course_id" },
-                unique: true,
-                filter: "status = 0");
-
-            migrationBuilder.CreateIndex(
-                name: "ix_enrollments_tenant_id_user_id_status",
-                schema: "enrollments",
-                table: "enrollments",
-                columns: new[] { "tenant_id", "user_id", "status" });
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "ix_inbox_state_delivered",
-                schema: "enrollments",
+                schema: "progress",
                 table: "inbox_state",
                 column: "delivered");
 
             migrationBuilder.CreateIndex(
+                name: "ix_lesson_progress_tenant_id_user_id_course_id",
+                schema: "progress",
+                table: "lesson_progress",
+                columns: new[] { "tenant_id", "user_id", "course_id" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_lesson_progress_tenant_id_user_id_lesson_id",
+                schema: "progress",
+                table: "lesson_progress",
+                columns: new[] { "tenant_id", "user_id", "lesson_id" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "ix_outbox_message_enqueue_time",
-                schema: "enrollments",
+                schema: "progress",
                 table: "outbox_message",
                 column: "enqueue_time");
 
             migrationBuilder.CreateIndex(
                 name: "ix_outbox_message_expiration_time",
-                schema: "enrollments",
+                schema: "progress",
                 table: "outbox_message",
                 column: "expiration_time");
 
             migrationBuilder.CreateIndex(
                 name: "ix_outbox_message_inbox_message_id_inbox_consumer_id_sequence_",
-                schema: "enrollments",
+                schema: "progress",
                 table: "outbox_message",
                 columns: new[] { "inbox_message_id", "inbox_consumer_id", "sequence_number" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "ix_outbox_message_outbox_id_sequence_number",
-                schema: "enrollments",
+                schema: "progress",
                 table: "outbox_message",
                 columns: new[] { "outbox_id", "sequence_number" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "ix_outbox_state_created",
-                schema: "enrollments",
+                schema: "progress",
                 table: "outbox_state",
                 column: "created");
         }
@@ -188,20 +216,24 @@ namespace LMS.EnrollmentService.Infrastructure.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "enrollments",
-                schema: "enrollments");
+                name: "course_progress",
+                schema: "progress");
+
+            migrationBuilder.DropTable(
+                name: "lesson_progress",
+                schema: "progress");
 
             migrationBuilder.DropTable(
                 name: "outbox_message",
-                schema: "enrollments");
+                schema: "progress");
 
             migrationBuilder.DropTable(
                 name: "inbox_state",
-                schema: "enrollments");
+                schema: "progress");
 
             migrationBuilder.DropTable(
                 name: "outbox_state",
-                schema: "enrollments");
+                schema: "progress");
         }
     }
 }

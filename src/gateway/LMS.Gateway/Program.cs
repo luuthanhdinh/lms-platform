@@ -11,7 +11,8 @@ builder.AddServiceDefaults();
 // YARP — load config and register the header-forwarding transform
 builder.Services.AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"))
-    .AddTransforms<LMS.Gateway.Transforms.HeaderForwardingTransform>();
+    .AddTransforms<LMS.Gateway.Transforms.HeaderForwardingTransform>()
+    .AddServiceDiscoveryDestinationResolver();
 
 // JWT auth — Keycloak
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

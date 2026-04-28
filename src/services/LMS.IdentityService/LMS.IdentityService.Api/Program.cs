@@ -4,13 +4,17 @@ using LMS.IdentityService.Domain.Abstractions;
 using LMS.IdentityService.Infrastructure;
 using LMS.IdentityService.Infrastructure.Data;
 using MassTransit;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
 // EF Core via Aspire
-builder.AddNpgsqlDbContext<IdentityDbContext>("lms-identity");
+builder.AddNpgsqlDataSource("lms-identity");
+builder.Services.AddDbContext<IdentityDbContext>((sp, o) =>
+    o.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>()));
 
 // Infrastructure repositories
 builder.Services.AddIdentityInfrastructure();

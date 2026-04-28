@@ -1,7 +1,5 @@
 using LMS.EnrollmentService.Domain.Repositories;
-using LMS.EnrollmentService.Infrastructure.Data;
 using LMS.EnrollmentService.Infrastructure.Repositories;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -17,12 +15,6 @@ public static class InfrastructureExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddDbContext<EnrollmentDbContext>((sp, options) =>
-        {
-            options.UseNpgsql(configuration.GetConnectionString("lms-enrollments"));
-            options.UseSnakeCaseNamingConvention();
-        });
-
         services.AddScoped<IEnrollmentRepository, EnrollmentRepository>();
 
         return services;

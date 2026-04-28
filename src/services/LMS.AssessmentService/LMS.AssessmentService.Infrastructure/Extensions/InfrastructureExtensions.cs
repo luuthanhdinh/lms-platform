@@ -8,6 +8,7 @@ using LMS.AssessmentService.Infrastructure.Sessions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using StackExchange.Redis;
 
 namespace LMS.AssessmentService.Infrastructure.Extensions;
@@ -19,8 +20,10 @@ public static class InfrastructureExtensions
         services.AddHttpContextAccessor();
         services.AddScoped<ITenantContext, HeaderTenantContext>();
 
-        services.AddDbContext<AssessmentDbContext>(opts =>
-            opts.UseNpgsql(config.GetConnectionString("lms-assessment")));
+        services.AddDbContext<AssessmentDbContext>((sp, opts) =>
+            opts.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>(),
+                    b => b.MigrationsHistoryTable("__EFMigrationsHistory", "public"))
+                .UseSnakeCaseNamingConvention());
 
         services.AddScoped<IAssessmentRepository, AssessmentRepository>();
         services.AddScoped<IAttemptRepository, AttemptRepository>();

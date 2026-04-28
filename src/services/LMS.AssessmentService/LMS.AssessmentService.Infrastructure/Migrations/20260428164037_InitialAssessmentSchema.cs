@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -14,6 +14,57 @@ namespace LMS.AssessmentService.Infrastructure.Migrations
         {
             migrationBuilder.EnsureSchema(
                 name: "assessments");
+
+            migrationBuilder.CreateTable(
+                name: "assessment_attempts",
+                schema: "assessments",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    assessment_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    score = table.Column<float>(type: "real", nullable: false),
+                    max_score = table.Column<float>(type: "real", nullable: false),
+                    passed = table.Column<bool>(type: "boolean", nullable: false),
+                    time_taken_seconds = table.Column<int>(type: "integer", nullable: false),
+                    grading_status = table.Column<int>(type: "integer", nullable: false),
+                    started_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    submitted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false),
+                    tenant_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_assessment_attempts", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "assessments",
+                schema: "assessments",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    course_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    lesson_id = table.Column<Guid>(type: "uuid", nullable: true),
+                    title = table.Column<string>(type: "text", nullable: false),
+                    passing_score = table.Column<float>(type: "real", nullable: false),
+                    time_limit_seconds = table.Column<int>(type: "integer", nullable: true),
+                    max_attempts = table.Column<int>(type: "integer", nullable: false),
+                    is_randomised = table.Column<bool>(type: "boolean", nullable: false),
+                    question_sample_size = table.Column<int>(type: "integer", nullable: true),
+                    is_adaptive = table.Column<bool>(type: "boolean", nullable: false),
+                    is_active = table.Column<bool>(type: "boolean", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false),
+                    tenant_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_assessments", x => x.id);
+                });
 
             migrationBuilder.CreateTable(
                 name: "inbox_state",
@@ -57,28 +108,32 @@ namespace LMS.AssessmentService.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "assessments",
+                name: "attempt_answers",
                 schema: "assessments",
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
-                    course_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    lesson_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    title = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
-                    passing_score = table.Column<float>(type: "real", nullable: false),
-                    time_limit_seconds = table.Column<int>(type: "integer", nullable: true),
-                    max_attempts = table.Column<int>(type: "integer", nullable: false, defaultValue: 3),
-                    is_randomised = table.Column<bool>(type: "boolean", nullable: false),
-                    question_sample_size = table.Column<int>(type: "integer", nullable: true),
-                    is_adaptive = table.Column<bool>(type: "boolean", nullable: false),
-                    is_active = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
+                    attempt_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    question_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    selected_option_index = table.Column<int>(type: "integer", nullable: true),
+                    text_answer = table.Column<string>(type: "text", nullable: true),
+                    is_correct = table.Column<bool>(type: "boolean", nullable: true),
+                    points_awarded = table.Column<int>(type: "integer", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false),
                     tenant_id = table.Column<Guid>(type: "uuid", nullable: false),
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("pk_assessments", x => x.id);
+                    table.PrimaryKey("pk_attempt_answers", x => x.id);
+                    table.ForeignKey(
+                        name: "fk_attempt_answers_assessment_attempts_attempt_id",
+                        column: x => x.attempt_id,
+                        principalSchema: "assessments",
+                        principalTable: "assessment_attempts",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -93,9 +148,10 @@ namespace LMS.AssessmentService.Infrastructure.Migrations
                     options = table.Column<string>(type: "jsonb", nullable: false),
                     correct_option_index = table.Column<int>(type: "integer", nullable: false),
                     explanation = table.Column<string>(type: "text", nullable: true),
-                    points = table.Column<int>(type: "integer", nullable: false, defaultValue: 1),
-                    difficulty_rating = table.Column<float>(type: "real", nullable: false, defaultValue: 3f),
+                    points = table.Column<int>(type: "integer", nullable: false),
+                    difficulty_rating = table.Column<float>(type: "real", nullable: false),
                     order = table.Column<int>(type: "integer", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false),
                     tenant_id = table.Column<Guid>(type: "uuid", nullable: false),
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
@@ -108,58 +164,6 @@ namespace LMS.AssessmentService.Infrastructure.Migrations
                         column: x => x.assessment_id,
                         principalSchema: "assessments",
                         principalTable: "assessments",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "assessment_attempts",
-                schema: "assessments",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    assessment_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    score = table.Column<float>(type: "real", nullable: false),
-                    max_score = table.Column<float>(type: "real", nullable: false),
-                    passed = table.Column<bool>(type: "boolean", nullable: false),
-                    time_taken_seconds = table.Column<int>(type: "integer", nullable: false),
-                    grading_status = table.Column<int>(type: "integer", nullable: false),
-                    started_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    submitted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    tenant_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_assessment_attempts", x => x.id);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "attempt_answers",
-                schema: "assessments",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    attempt_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    question_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    selected_option_index = table.Column<int>(type: "integer", nullable: true),
-                    text_answer = table.Column<string>(type: "text", nullable: true),
-                    is_correct = table.Column<bool>(type: "boolean", nullable: true),
-                    points_awarded = table.Column<int>(type: "integer", nullable: false),
-                    tenant_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_attempt_answers", x => x.id);
-                    table.ForeignKey(
-                        name: "fk_attempt_answers_assessment_attempts_attempt_id",
-                        column: x => x.attempt_id,
-                        principalSchema: "assessments",
-                        principalTable: "assessment_attempts",
                         principalColumn: "id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -209,33 +213,6 @@ namespace LMS.AssessmentService.Infrastructure.Migrations
                         principalColumn: "outbox_id");
                 });
 
-            // Assessments indexes
-            migrationBuilder.CreateIndex(
-                name: "ix_assessments_tenant_id_course_id",
-                schema: "assessments",
-                table: "assessments",
-                columns: new[] { "tenant_id", "course_id" });
-
-            migrationBuilder.CreateIndex(
-                name: "ix_assessments_tenant_id_lesson_id",
-                schema: "assessments",
-                table: "assessments",
-                columns: new[] { "tenant_id", "lesson_id" });
-
-            // Questions indexes
-            migrationBuilder.CreateIndex(
-                name: "ix_questions_assessment_id",
-                schema: "assessments",
-                table: "questions",
-                column: "assessment_id");
-
-            migrationBuilder.CreateIndex(
-                name: "ix_questions_tenant_id_assessment_id_order",
-                schema: "assessments",
-                table: "questions",
-                columns: new[] { "tenant_id", "assessment_id", "order" });
-
-            // Assessment attempts indexes
             migrationBuilder.CreateIndex(
                 name: "ix_assessment_attempts_tenant_id_assessment_id",
                 schema: "assessments",
@@ -248,7 +225,19 @@ namespace LMS.AssessmentService.Infrastructure.Migrations
                 table: "assessment_attempts",
                 columns: new[] { "tenant_id", "user_id", "assessment_id" });
 
-            // Attempt answers indexes
+            migrationBuilder.CreateIndex(
+                name: "ix_assessments_tenant_id_course_id",
+                schema: "assessments",
+                table: "assessments",
+                columns: new[] { "tenant_id", "course_id" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_assessments_tenant_id_lesson_id",
+                schema: "assessments",
+                table: "assessments",
+                columns: new[] { "tenant_id", "lesson_id" },
+                filter: "lesson_id IS NOT NULL");
+
             migrationBuilder.CreateIndex(
                 name: "ix_attempt_answers_attempt_id",
                 schema: "assessments",
@@ -261,7 +250,6 @@ namespace LMS.AssessmentService.Infrastructure.Migrations
                 table: "attempt_answers",
                 columns: new[] { "tenant_id", "attempt_id" });
 
-            // MassTransit outbox indexes
             migrationBuilder.CreateIndex(
                 name: "ix_inbox_state_delivered",
                 schema: "assessments",
@@ -299,6 +287,18 @@ namespace LMS.AssessmentService.Infrastructure.Migrations
                 schema: "assessments",
                 table: "outbox_state",
                 column: "created");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_questions_assessment_id",
+                schema: "assessments",
+                table: "questions",
+                column: "assessment_id");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_questions_tenant_id_assessment_id_order",
+                schema: "assessments",
+                table: "questions",
+                columns: new[] { "tenant_id", "assessment_id", "order" });
         }
 
         /// <inheritdoc />
@@ -306,6 +306,10 @@ namespace LMS.AssessmentService.Infrastructure.Migrations
         {
             migrationBuilder.DropTable(
                 name: "attempt_answers",
+                schema: "assessments");
+
+            migrationBuilder.DropTable(
+                name: "outbox_message",
                 schema: "assessments");
 
             migrationBuilder.DropTable(
@@ -317,19 +321,15 @@ namespace LMS.AssessmentService.Infrastructure.Migrations
                 schema: "assessments");
 
             migrationBuilder.DropTable(
-                name: "assessments",
-                schema: "assessments");
-
-            migrationBuilder.DropTable(
-                name: "outbox_message",
-                schema: "assessments");
-
-            migrationBuilder.DropTable(
                 name: "inbox_state",
                 schema: "assessments");
 
             migrationBuilder.DropTable(
                 name: "outbox_state",
+                schema: "assessments");
+
+            migrationBuilder.DropTable(
+                name: "assessments",
                 schema: "assessments");
         }
     }

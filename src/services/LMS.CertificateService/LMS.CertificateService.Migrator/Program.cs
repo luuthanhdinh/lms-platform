@@ -1,27 +1,29 @@
 using LMS.CertificateService.Domain.Interfaces;
 using LMS.CertificateService.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 var builder = Host.CreateApplicationBuilder(args);
-builder.AddServiceDefaults();
-
-// Migrator needs a design-time tenant context (no HTTP context)
 builder.Services.AddSingleton<ITenantContext>(new MigratorTenantContext());
-
-builder.Services.AddDbContext<CertificateDbContext>(options =>
-{
-    var connectionString = builder.Configuration["ConnectionStrings:certificatedb"]
-        ?? builder.Configuration["ConnectionStrings:lms-certificate"];
-    options.UseNpgsql(connectionString);
-});
+builder.AddNpgsqlDataSource("lms-certificate");
+builder.Services.AddDbContext<CertificateDbContext>((sp, o) =>
+    o.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>(),
+            b => b.MigrationsHistoryTable("__EFMigrationsHistory", "public")
+                  .MigrationsAssembly("LMS.CertificateService.Infrastructure"))
+     .UseSnakeCaseNamingConvention());
 
 var host = builder.Build();
+await host.StartAsync();
 
 using var scope = host.Services.CreateScope();
 var db = scope.ServiceProvider.GetRequiredService<CertificateDbContext>();
-await db.Database.MigrateAsync();
+var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-// Worker exits after migration completes (WaitForCompletion in AppHost)
+logger.LogInformation("Applying CertificateService migrations...");
+await db.Database.MigrateAsync();
+logger.LogInformation("Migrations applied successfully.");
+
+await host.StopAsync();
 
 internal sealed class MigratorTenantContext : ITenantContext
 {

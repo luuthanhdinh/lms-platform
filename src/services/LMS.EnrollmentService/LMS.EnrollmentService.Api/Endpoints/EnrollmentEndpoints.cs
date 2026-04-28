@@ -100,6 +100,25 @@ public static class EnrollmentEndpoints
             return Results.Created($"/api/enrollments/{enrollment.Id}", enrollment.ToDto());
         });
 
+        // GET /api/enrollments/me — current user's enrollments
+        group.MapGet("/me", async (
+            ITenantContext ctx,
+            IEnrollmentRepository repo,
+            string? status,
+            int page = 1, int pageSize = 20,
+            CancellationToken ct = default) =>
+        {
+            if (ctx.TenantId == Guid.Empty) return ResultExtensions.ProblemTenantRequired();
+            if (!AuthorizationHelpers.IsAuthenticated(ctx)) return ResultExtensions.ProblemUnauthorized();
+
+            EnrollmentStatus? parsedStatus = null;
+            if (status is not null && Enum.TryParse<EnrollmentStatus>(status, ignoreCase: true, out var s))
+                parsedStatus = s;
+
+            var result = await repo.ListByUserAsync(ctx.TenantId, ctx.UserId, parsedStatus, page, pageSize, ct);
+            return Results.Ok(new Page<EnrollmentDto>(result.Items.Select(e => e.ToDto()).ToList(), page, pageSize, result.Total));
+        });
+
         // GET /api/enrollments
         group.MapGet("/", async (
             ITenantContext ctx,

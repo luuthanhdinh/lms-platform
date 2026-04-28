@@ -7,8 +7,10 @@ export interface PaginatedMeta {
 }
 
 export interface PagedResult<T> {
-  data: T[]
-  meta: PaginatedMeta
+  items: T[]
+  pageNumber: number
+  pageSize: number
+  total: number
 }
 
 // ── Courses ───────────────────────────────────────────────────────────────────

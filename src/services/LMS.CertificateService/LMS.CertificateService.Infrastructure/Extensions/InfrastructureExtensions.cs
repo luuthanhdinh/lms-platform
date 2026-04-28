@@ -10,6 +10,7 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 
 namespace LMS.CertificateService.Infrastructure.Extensions;
 
@@ -18,12 +19,12 @@ public static class InfrastructureExtensions
     public static IHostApplicationBuilder AddCertificateInfrastructure(this IHostApplicationBuilder builder)
     {
         // DbContext
+        builder.AddNpgsqlDataSource("lms-certificate");
         builder.Services.AddDbContext<CertificateDbContext>((sp, options) =>
-        {
-            var connectionString = builder.Configuration["ConnectionStrings:certificatedb"]
-                ?? builder.Configuration["ConnectionStrings:lms-certificate"];
-            options.UseNpgsql(connectionString);
-        });
+            options.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>(),
+                       b => b.MigrationsHistoryTable("__EFMigrationsHistory", "public")
+                             .MigrationsAssembly("LMS.CertificateService.Infrastructure"))
+                   .UseSnakeCaseNamingConvention());
 
         // Tenant context (scoped — reads X-Tenant-Id from HTTP headers)
         builder.Services.AddScoped<ITenantContext, HeaderTenantContext>();

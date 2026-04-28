@@ -5,9 +5,16 @@ using LMS.ProgressService.Infrastructure.Consumers;
 using LMS.ProgressService.Infrastructure.Data;
 using LMS.ProgressService.Infrastructure.Extensions;
 using MassTransit;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
+builder.AddNpgsqlDataSource("lms-progress");
+builder.Services.AddDbContext<ProgressDbContext>((sp, o) =>
+    o.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>(),
+            b => b.MigrationsHistoryTable("__EFMigrationsHistory", "public"))
+     .UseSnakeCaseNamingConvention());
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, HeaderTenantContext>();

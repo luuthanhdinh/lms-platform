@@ -1,12 +1,18 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Infrastructure
-var postgres = builder.AddPostgres("postgres").WithPgAdmin();
-var mongo    = builder.AddMongoDB("mongo");
-var redis    = builder.AddRedis("redis");
-var rabbitmq = builder.AddRabbitMQ("rabbitmq").WithManagementPlugin();
-var keycloak = builder.AddKeycloak("keycloak")
-                      .WithRealmImport("./keycloak/lms-realm.json");
+// Infrastructure — fixed dev passwords so named volumes survive restarts
+var pgPassword       = builder.AddParameter("pg-password",       "lms_dev_pg",       secret: true);
+var mongoPassword    = builder.AddParameter("mongo-password",    "lms_dev_mongo",    secret: true);
+var redisPassword    = builder.AddParameter("redis-password",    "lms_dev_redis",    secret: true);
+var rabbitmqPassword = builder.AddParameter("rabbitmq-password", "lms_dev_rabbitmq", secret: true);
+
+var postgres = builder.AddPostgres("postgres", password: pgPassword).WithPgAdmin().WithDataVolume("lms-postgres-data");
+var mongo    = builder.AddMongoDB("mongo", password: mongoPassword).WithDataVolume("lms-mongo-data");
+var redis    = builder.AddRedis("redis", password: redisPassword).WithDataVolume("lms-redis-data");
+var rabbitmq = builder.AddRabbitMQ("rabbitmq", password: rabbitmqPassword).WithManagementPlugin().WithDataVolume("lms-rabbitmq-data");
+var keycloak = builder.AddKeycloak("keycloak", port: 8080)
+                      .WithRealmImport("./keycloak/lms-realm.json")
+                      .WithDataVolume("lms-keycloak-data");
 
 // Databases — uncomment as each service is scaffolded
 var identityDb    = postgres.AddDatabase("lms-identity");
@@ -19,10 +25,12 @@ var enrollmentDb  = postgres.AddDatabase("lms-enrollments");
 
 // Gateway — validates JWTs, forwards X-User-Id / X-Tenant-Id / X-Roles
 var gateway = builder.AddProject<Projects.LMS_Gateway>("gateway")
+    .WithEndpoint("http", e => e.Port = 5000)
     .WithReference(keycloak)
     .WithReference(redis)
     .WaitFor(keycloak)
-    .WaitFor(redis);
+    .WaitFor(redis)
+    .WithEnvironment("Keycloak__Authority", $"{keycloak.GetEndpoint("http")}/realms/lms");
 
 // IdentityService
 var identityMigrator = builder.AddProject<Projects.LMS_IdentityService_Migrator>("identity-migrator")
@@ -126,39 +134,29 @@ var certificate = builder.AddProject<Projects.LMS_CertificateService_Api>("certi
 
 gateway.WithReference(certificate);
 
-// Services — uncomment as each service project is scaffolded
+// NotificationWorker
+var mailhog = builder.AddContainer("mailhog", "mailhog/mailhog", "v1.0.1")
+    .WithEndpoint(port: 1025, targetPort: 1025, name: "smtp")
+    .WithEndpoint(port: 8025, targetPort: 8025, name: "ui", scheme: "http");
 
-// builder.AddProject<Projects.LMS_CourseService>("courses")
-//     .WithReference(courseDb).WithReference(rabbitmq);
+builder.AddProject<Projects.LMS_NotificationWorker>("notifications")
+    .WithReference(rabbitmq).WaitFor(rabbitmq)
+    .WithReference(redis).WaitFor(redis)
+    .WaitFor(mailhog)
+    .WithEnvironment("Smtp__Host", "localhost")
+    .WithEnvironment("Smtp__Port", "1025");
 
-// builder.AddProject<Projects.LMS_ContentService>("content")
-//     .WithReference(contentDb).WithReference(rabbitmq);
-
-// builder.AddProject<Projects.LMS_EnrollmentService>("enrollment")
-//     .WithReference(enrollmentDb).WithReference(rabbitmq);
-
-// builder.AddProject<Projects.LMS_ProgressService>("progress")
-//     .WithReference(progressDb).WithReference(rabbitmq);
-
-// builder.AddProject<Projects.LMS_AssessmentService>("assessment")
-//     .WithReference(assessmentDb).WithReference(rabbitmq).WithReference(redis);
-
-// builder.AddProject<Projects.LMS_CertificateService>("certificate")
-//     .WithReference(certificateDb).WithReference(rabbitmq);
-
-// builder.AddProject<Projects.LMS_NotificationWorker>("notifications")
-//     .WithReference(rabbitmq);
-
-// Frontend — React app via Vite dev server; uncomment once frontend scaffold is present
-// var gateway = builder.AddProject<Projects.LMS_Gateway>("gateway"); // reference above
-// builder.AddNpmApp("frontend", "../frontend")
-//     .WithReference(gateway)
-//     .WithEnvironment("VITE_API_BASE_URL", gateway.GetEndpoint("http"))
-//     .WithEnvironment("VITE_KEYCLOAK_URL", keycloak.GetEndpoint("http"))
-//     .WithEnvironment("VITE_KEYCLOAK_REALM", "lms")
-//     .WithEnvironment("VITE_KEYCLOAK_CLIENT_ID", "lms-spa")
-//     .WithHttpEndpoint(5173, name: "http")
-//     .WithExternalHttpEndpoints();
+// Frontend — React app via Vite dev server
+builder.AddNpmApp("frontend", "../../frontend", "dev")
+    .WithReference(gateway)
+    .WaitFor(gateway)
+    .WithEnvironment("VITE_API_BASE_URL", gateway.GetEndpoint("http"))
+    .WithEnvironment("VITE_KEYCLOAK_URL", keycloak.GetEndpoint("http"))
+    .WithEnvironment("VITE_KEYCLOAK_REALM", "lms")
+    .WithEnvironment("VITE_KEYCLOAK_CLIENT_ID", "lms-spa")
+    .WithEnvironment("BROWSER", "none")
+    .WithHttpEndpoint(port: 5173, targetPort: 5173, name: "http", isProxied: false)
+    .WithExternalHttpEndpoints();
 
 // Phase 2+ infrastructure (uncomment when starting Phase 2 sprint)
 // builder.AddContainer("clickhouse", "clickhouse/clickhouse-server", "24")

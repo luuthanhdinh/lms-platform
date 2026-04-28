@@ -33,5 +33,6 @@
     <ProjectReference Include="..\services\LMS.AssessmentService\LMS.AssessmentService.Migrator\LMS.AssessmentService.Migrator.csproj" />
     <ProjectReference Include="..\services\LMS.CertificateService\LMS.CertificateService.Api\LMS.CertificateService.Api.csproj" />
     <ProjectReference Include="..\services\LMS.CertificateService\LMS.CertificateService.Migrator\LMS.CertificateService.Migrator.csproj" />
+    <ProjectReference Include="..\services\LMS.NotificationWorker\LMS.NotificationWorker.csproj" />
   </ItemGroup>
 </Project>
