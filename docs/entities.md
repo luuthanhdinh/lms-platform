@@ -254,6 +254,7 @@ public class Assessment : TenantEntity
     public bool IsRandomised { get; set; }
     public int? QuestionSampleSize { get; set; }
     public bool IsAdaptive { get; set; }               // Phase 2 IRT
+    public bool IsActive { get; set; } = true;         // flipped false on CourseArchived
     public ICollection<Question> Questions { get; set; } = [];
 }
 
