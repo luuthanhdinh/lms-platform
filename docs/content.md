@@ -1,8 +1,6 @@
-# ContentService
+# ContentService documentation has moved
 
-**Port:** 5103 | **DB:** `lms_content` (MongoDB) + S3 | **ADRs:** ADR-003, ADR-004
-
-## Responsibility
+See `docs/services/content.md` for current documentation.
 Media asset management: upload, transcoding, streaming, download.
 Metadata in MongoDB. Binaries in S3. Videos → HLS via FFmpeg Kubernetes Job.
 Owns resume position (ADR-004). ProgressService owns completion %.
