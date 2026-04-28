@@ -147,7 +147,7 @@ builder.AddProject<Projects.LMS_NotificationWorker>("notifications")
     .WithEnvironment("Smtp__Port", "1025");
 
 // Frontend — React app via Vite dev server
-builder.AddNpmApp("frontend", "../../frontend", "dev")
+builder.AddNpmApp("frontend", "../frontend", "dev")
     .WithReference(gateway)
     .WaitFor(gateway)
     .WithEnvironment("VITE_API_BASE_URL", gateway.GetEndpoint("http"))
