@@ -3,7 +3,7 @@ _Hash: <to be filled by orchestrator>_
 
 Feature: **LMS React Frontend** (Phase 1, service #10)
 Type: **SPA** — Vite + React 19 + TypeScript
-Path: `frontend/`
+Path: `src/frontend/`
 Aspire resource name: `frontend` (registered via `AddNpmApp`, port 5173, external HTTP)
 Auth: Keycloak-js (PKCE S256, `check-sso`, **in-memory token only — never localStorage**)
 HTTP transport: Axios via single `apiClient` → YARP gateway (`VITE_API_BASE_URL`)
@@ -19,7 +19,7 @@ Reference docs (read order satisfied): `docs/architecture.md` § AppHost+Gateway
 ## 1. Project layout (locked)
 
 ```
-frontend/
+src/frontend/
 ├── package.json
 ├── vite.config.ts
 ├── tailwind.config.ts
@@ -307,7 +307,7 @@ Both use `import.meta.env.VITE_API_BASE_URL` (gateway URL injected by Aspire —
 Replace the commented frontend block (lines 152–161) with:
 
 ```csharp
-var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
+var frontend = builder.AddNpmApp("frontend", "../frontend", "dev")
     .WithReference(gateway)
     .WaitFor(gateway)
     .WithEnvironment("VITE_API_BASE_URL",       gateway.GetEndpoint("http"))
@@ -319,7 +319,7 @@ var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
     .PublishAsDockerFile();   // optional Phase 2; OK to omit Phase 1
 ```
 
-> The relative path is `../../frontend` because AppHost runs from `src/LMS.AppHost/bin/...`. Confirm working dir with `Directory.GetCurrentDirectory()` resolution. **Open Decision #1.**
+> The relative path is `../frontend` because AppHost runs from `src/LMS.AppHost/bin/...`. Confirm working dir with `Directory.GetCurrentDirectory()` resolution. **Open Decision #1.**
 
 Gateway must add `http://localhost:5173` to `Cors:AllowedOrigins` (already configured per `docs/architecture.md` §Gateway block; verify in T11).
 
@@ -329,7 +329,7 @@ Keycloak realm `lms` must register client `lms-spa` with redirect `http://localh
 
 ## 8. Environment variables (locked)
 
-`frontend/.env.example` (committed):
+`src/frontend/.env.example` (committed):
 
 ```
 VITE_API_BASE_URL=http://localhost:5000
@@ -338,13 +338,13 @@ VITE_KEYCLOAK_REALM=lms
 VITE_KEYCLOAK_CLIENT_ID=lms-spa
 ```
 
-`frontend/.env.local` is gitignored. Aspire injects the four `VITE_*` vars at runtime (overrides `.env.local`).
+`src/frontend/.env.local` is gitignored. Aspire injects the four `VITE_*` vars at runtime (overrides `.env.local`).
 
 ---
 
 ## 9. Tests (locked surface)
 
-Vitest unit (`frontend/src/**/*.test.ts(x)`):
+Vitest unit (`src/frontend/src/**/*.test.ts(x)`):
 - `apiClient` request interceptor: with token → header attached; without token → no header.
 - `apiClient` 401 response → `keycloak.login()` called.
 - `useAuth` shape from a mocked keycloak object.
@@ -352,7 +352,7 @@ Vitest unit (`frontend/src/**/*.test.ts(x)`):
 - Each TanStack Query hook: query key is stable; mutation invalidates correct keys (using `QueryClient` test harness).
 - Zod schemas reject invalid payloads (one Theory case per form).
 
-Architecture (custom vitest tests under `frontend/tests/architecture/`):
+Architecture (custom vitest tests under `src/frontend/tests/architecture/`):
 - No file outside `src/lib/api-client.ts` calls `axios.create(`.
 - No file references `localStorage.setItem(.+token` or `sessionStorage.setItem(.+token`.
 - No component fetches data outside a TanStack Query hook (regex: `apiClient\.(get|post|put|delete|patch)` in `src/features/**/components/**` other than mutation-onSubmit handlers — refined in T13).
@@ -369,7 +369,7 @@ Backend integration: gateway CORS preflight test in `tests/LMS.IntegrationTests/
 
 ## 10. Open decisions (require human sign-off before T6+ start)
 
-1. **AppHost relative path to `frontend/`.** Locked as `../../frontend`; confirm vs Aspire's resolution from solution root. (Some Aspire versions resolve relative to AppHost csproj dir.) Block T11 if path mismatch.
+1. **AppHost relative path to `frontend/`.** Locked as `../frontend`; confirm vs Aspire's resolution from solution root. (Some Aspire versions resolve relative to AppHost csproj dir.) Block T11 if path mismatch.
 2. **TanStack Router style.** Locked as **declarative tree** (no file-based codegen) for Phase 1. Confirm — file-based gives type-safe `Link` props but adds a build step.
 3. **shadcn/ui scope Phase 1.** Locked initial set: `button`, `card`, `input`, `label`, `dialog`, `dropdown-menu`, `select`, `tabs`, `toast`, `skeleton`, `progress`, `badge`. More added on demand. Confirm.
 4. **Tailwind v4 vs v3.** Locked **v4** (matches `docs/architecture.md` scaffold using `@tailwindcss/vite`). Confirm OK to ship v4 (some shadcn templates assume v3 + tailwind.config.ts).
@@ -389,7 +389,7 @@ No backend events introduced. No new entities. Only additive items:
 - `tests/LMS.IntegrationTests/Gateway/CorsTests.cs` — new file (T11).
 - `src/LMS.AppHost/Program.cs` — uncomment + adjust frontend block (T11).
 - `keycloak/lms-realm.json` — verify/add `lms-spa` client (T11).
-- `frontend/` — entire directory created (T1–T10).
-- `.gitignore` — append `frontend/node_modules/`, `frontend/.env.local`, `frontend/dist/` (T1).
+- `src/frontend/` — entire directory created (T1–T10).
+- `.gitignore` — append `src/frontend/node_modules/`, `src/frontend/.env.local`, `src/frontend/dist/` (T1).
 
 No event records changed. No `LMS.Contracts` impact.
