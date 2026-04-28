@@ -1,0 +1,243 @@
+{
+  "feature": "LMS.Gateway — YARP reverse proxy with Keycloak JWT, per-tenant Redis rate limiting, header forwarding, CORS, health",
+  "phase": 1,
+  "complexity": "M",
+  "contracts_ref": ".claude/contracts.md",
+  "tasks": [
+    {
+      "id": "T1",
+      "agent": "backend",
+      "title": "Scaffold LMS.Gateway project + ServiceDefaults wiring",
+      "spec": "Create src/gateway/LMS.Gateway/LMS.Gateway.csproj (web SDK, net9.0, TreatWarningsAsErrors). Reference LMS.ServiceDefaults. Add NuGet packages: Yarp.ReverseProxy 2.*, Microsoft.AspNetCore.Authentication.JwtBearer 9.*, StackExchange.Redis 2.*, Aspire.StackExchange.Redis 9.*, Microsoft.AspNetCore.RateLimiting (built-in). Create Program.cs skeleton that calls builder.AddServiceDefaults(); var app = builder.Build(); app.MapDefaultEndpoints(); app.Run();. Create empty appsettings.json + appsettings.Development.json. Add the project to the solution file. NO YARP / auth / rate limiting yet — only compilable scaffold.",
+      "files": [
+        "src/gateway/LMS.Gateway/LMS.Gateway.csproj",
+        "src/gateway/LMS.Gateway/Program.cs",
+        "src/gateway/LMS.Gateway/appsettings.json",
+        "src/gateway/LMS.Gateway/appsettings.Development.json",
+        "src/gateway/LMS.Gateway/Properties/launchSettings.json",
+        "LMS.sln"
+      ],
+      "depends_on": [],
+      "branch": "feature/gateway-T1-scaffold",
+      "worktree": ".claude-worktrees/T1-gateway-scaffold",
+      "timeout_minutes": 20,
+      "acceptance": [
+        "dotnet build src/gateway/LMS.Gateway/LMS.Gateway.csproj",
+        "dotnet run --project src/gateway/LMS.Gateway -- --urls http://localhost:0 (smoke: /health returns 200)"
+      ]
+    },
+    {
+      "id": "T2",
+      "agent": "gateway-ops",
+      "title": "YARP config + routes for all Phase 1 services",
+      "spec": "Add AddReverseProxy().LoadFromConfig(...) to Program.cs. Place ReverseProxy section in appsettings.json with the exact 8 routes locked in contracts.md (identity, courses, content, enrollment, progress, assessment, certificate, verify). Verify route lives at /verify/{**rest} with AuthorizationPolicy=anonymous. Clusters use logical addresses http://{name} resolved by Aspire service discovery. Map MapReverseProxy() AFTER UseAuthentication/UseAuthorization (which T3 adds). Include path forwarding as-is. Strip inbound X-User-Id, X-Tenant-Id, X-Roles, Authorization on outbound for un-authenticated routes; trusted ones added by T3.",
+      "files": [
+        "src/gateway/LMS.Gateway/Program.cs",
+        "src/gateway/LMS.Gateway/appsettings.json"
+      ],
+      "depends_on": ["T1"],
+      "branch": "feature/gateway-T2-yarp-routes",
+      "worktree": ".claude-worktrees/T2-yarp-routes",
+      "timeout_minutes": 30,
+      "acceptance": [
+        "dotnet build",
+        "Smoke: GET /api/courses/foo with no JWT returns 401 (after T3) — for T2-only smoke, route table matches contracts.md exactly"
+      ]
+    },
+    {
+      "id": "T3",
+      "agent": "gateway-ops",
+      "title": "JWT validation (Keycloak JWKS) + header-forwarding YARP transform",
+      "spec": "Add AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer with Authority/Audience from config and RequireHttpsMetadata=!Development. Configure TokenValidationParameters.RoleClaimType. In OnTokenValidated, flatten Keycloak realm_access.roles[] into ClaimTypes.Role claims. Add fallback default authorization policy = RequireAuthenticatedUser; routes with AuthorizationPolicy=anonymous bypass. Register a YARP request transform that: (a) deletes any inbound X-User-Id, X-Tenant-Id, X-Roles, X-Correlation-Id headers from the outbound proxy request, (b) re-adds X-User-Id from sub, X-Tenant-Id from tenant_id, X-Roles from joined ClaimTypes.Role values when authenticated, (c) generates X-Correlation-Id if missing. Customize 401/403 with the JSON shape locked in contracts.md ({code, message}).",
+      "files": [
+        "src/gateway/LMS.Gateway/Program.cs",
+        "src/gateway/LMS.Gateway/Auth/KeycloakJwtOptions.cs",
+        "src/gateway/LMS.Gateway/Transforms/HeaderForwardingTransform.cs",
+        "src/gateway/LMS.Gateway/appsettings.json"
+      ],
+      "depends_on": ["T2"],
+      "branch": "feature/gateway-T3-jwt-headers",
+      "worktree": ".claude-worktrees/T3-jwt-headers",
+      "timeout_minutes": 45,
+      "acceptance": [
+        "dotnet build",
+        "Manual: request without JWT to /api/courses/* → 401 with {code:'UNAUTHENTICATED'}",
+        "Manual: forged X-Tenant-Id header is replaced by trusted value from JWT"
+      ]
+    },
+    {
+      "id": "T4",
+      "agent": "gateway-ops",
+      "title": "Per-tenant Redis-backed fixed-window rate limiting",
+      "spec": "Wire StackExchange.Redis via Aspire (builder.AddRedisClient(\"redis\")). Configure AddRateLimiter with two policies: 'per-tenant' (FixedWindow, 60s, 600 req, partition by X-Tenant-Id from authenticated principal's tenant_id claim) and 'anonymous' (FixedWindow, 60s, 60 req, partition by RemoteIpAddress). Use a Redis-backed partition store (RedisRateLimiting NuGet OR custom IDistributedRateLimiter — implementer choice; the partition keys, windows, and limits are locked). Apply 'per-tenant' as the default to all proxied routes; the verify route uses 'anonymous'. Exempt /health, /health/live, /health/ready. On rejection emit 429 with body {code:'RATE_LIMITED', message, retryAfterSeconds} and Retry-After header. All knobs configurable under RateLimit: section per contracts.md.",
+      "files": [
+        "src/gateway/LMS.Gateway/Program.cs",
+        "src/gateway/LMS.Gateway/RateLimiting/TenantRateLimitPolicy.cs",
+        "src/gateway/LMS.Gateway/RateLimiting/AnonymousRateLimitPolicy.cs",
+        "src/gateway/LMS.Gateway/RateLimiting/RedisPartitionStore.cs",
+        "src/gateway/LMS.Gateway/appsettings.json"
+      ],
+      "depends_on": ["T3"],
+      "branch": "feature/gateway-T4-rate-limit",
+      "worktree": ".claude-worktrees/T4-rate-limit",
+      "timeout_minutes": 60,
+      "acceptance": [
+        "dotnet build",
+        "Integration: 601st req in 60s window with same X-Tenant-Id → 429 with Retry-After",
+        "Integration: different tenants share neither bucket"
+      ]
+    },
+    {
+      "id": "T5",
+      "agent": "backend",
+      "title": "CORS policy 'frontend'",
+      "spec": "AddCors with policy 'frontend' reading Cors:AllowedOrigins (default ['http://localhost:5173']) AllowAnyHeader, AllowAnyMethod, AllowCredentials, preflight 600s. Call app.UseCors('frontend') BEFORE app.UseAuthentication(). Can run in parallel with T4 — only modifies different sections of Program.cs (CORS lines + Cors: config block) and a separate config key, but to avoid Program.cs conflict scheduler should serialize Program.cs-touching tasks (T2→T3→T4→T5) OR use a dedicated CorsSetup extension. Implementer: place CORS wiring in src/gateway/LMS.Gateway/Cors/CorsExtensions.cs and call from Program.cs at a single insertion point so the diff is small.",
+      "files": [
+        "src/gateway/LMS.Gateway/Program.cs",
+        "src/gateway/LMS.Gateway/Cors/CorsExtensions.cs",
+        "src/gateway/LMS.Gateway/appsettings.json"
+      ],
+      "depends_on": ["T4"],
+      "branch": "feature/gateway-T5-cors",
+      "worktree": ".claude-worktrees/T5-cors",
+      "timeout_minutes": 20,
+      "acceptance": [
+        "dotnet build",
+        "Manual: OPTIONS preflight from http://localhost:5173 → 204 with Access-Control-Allow-* headers"
+      ]
+    },
+    {
+      "id": "T6",
+      "agent": "backend",
+      "title": "Health endpoints + JWKS/Redis readiness checks",
+      "spec": "Confirm app.MapDefaultEndpoints() exposes /health, /health/ready (tag 'ready'), /health/live. Add HealthCheck for Redis (AspNetCore.HealthChecks.Redis or built-in) tagged 'ready'. Add a custom JwksHealthCheck that GETs {Keycloak:Authority}/protocol/openid-connect/certs with a 2s timeout, tagged 'ready'. Both must be exempt from auth and rate limiting (configure endpoint metadata: AllowAnonymous + DisableRateLimiting). Add /health/live with no checks (process-up only).",
+      "files": [
+        "src/gateway/LMS.Gateway/Program.cs",
+        "src/gateway/LMS.Gateway/Health/JwksHealthCheck.cs"
+      ],
+      "depends_on": ["T1"],
+      "branch": "feature/gateway-T6-health",
+      "worktree": ".claude-worktrees/T6-health",
+      "timeout_minutes": 25,
+      "acceptance": [
+        "dotnet build",
+        "GET /health/live → 200 always",
+        "GET /health/ready with Redis down → 503"
+      ]
+    },
+    {
+      "id": "T7",
+      "agent": "gateway-ops",
+      "title": "Aspire AppHost wiring for gateway",
+      "spec": "Edit src/LMS.AppHost/Program.cs. Add Projects.LMS_Gateway reference exactly once with .WithReference(keycloak), .WithReference(redis), and .WithReference(...) for each of the 7 Phase 1 services (identity, courses, content, enrollment, progress, assessment, certificate) so YARP service discovery resolves http://{name}. Use .WaitFor(keycloak).WaitFor(redis) so the gateway starts after dependencies are ready. Add the gateway project reference to LMS.AppHost.csproj. Do NOT change the order of other resources. Note: this task only requires the gateway project to compile (T1) — it does not depend on T2–T6 logic; AppHost wiring is independent.",
+      "files": [
+        "src/LMS.AppHost/Program.cs",
+        "src/LMS.AppHost/LMS.AppHost.csproj"
+      ],
+      "depends_on": ["T1"],
+      "branch": "feature/gateway-T7-apphost",
+      "worktree": ".claude-worktrees/T7-apphost",
+      "timeout_minutes": 20,
+      "acceptance": [
+        "dotnet build src/LMS.AppHost",
+        "Aspire dashboard shows gateway resource with healthy references"
+      ]
+    },
+    {
+      "id": "T8",
+      "agent": "tester",
+      "title": "Integration tests — routing, JWT, header forwarding, rate limit, CORS, health",
+      "spec": "Use xunit-integration skill: WebApplicationFactory<Program> against LMS.Gateway with Testcontainers Redis + Keycloak stub. Tests:\n  1. RoutingTests — each Phase 1 route prefix proxies to a stub backend with the path preserved.\n  2. JwtTests — missing token → 401 {code:'UNAUTHENTICATED'}; expired token → 401; valid token → 200 + downstream sees X-User-Id, X-Tenant-Id, X-Roles matching claims.\n  3. HeaderForgeryTests — inbound X-Tenant-Id is overwritten by JWT-derived value, never trusted.\n  4. RateLimitTests — 601st request within 60s for same tenant → 429 {code:'RATE_LIMITED'} with Retry-After; different tenants do not share bucket; /health* exempt.\n  5. AnonymousVerifyTests — /verify/{id} reachable without JWT, partitioned by IP.\n  6. CorsTests — preflight from configured origin → 204 + Access-Control-Allow-Credentials.\n  7. HealthTests — /health/live always 200; /health/ready turns 503 when Redis stopped.\nLand in tests/LMS.IntegrationTests/Gateway/. Tag with [Trait(\"Category\",\"Gateway\")].",
+      "files": [
+        "tests/LMS.IntegrationTests/Gateway/RoutingTests.cs",
+        "tests/LMS.IntegrationTests/Gateway/JwtTests.cs",
+        "tests/LMS.IntegrationTests/Gateway/HeaderForgeryTests.cs",
+        "tests/LMS.IntegrationTests/Gateway/RateLimitTests.cs",
+        "tests/LMS.IntegrationTests/Gateway/AnonymousVerifyTests.cs",
+        "tests/LMS.IntegrationTests/Gateway/CorsTests.cs",
+        "tests/LMS.IntegrationTests/Gateway/HealthTests.cs",
+        "tests/LMS.IntegrationTests/Gateway/Fixtures/GatewayFactory.cs",
+        "tests/LMS.IntegrationTests/Gateway/Fixtures/StubBackend.cs",
+        "tests/LMS.IntegrationTests/Gateway/Fixtures/KeycloakStub.cs"
+      ],
+      "depends_on": ["T2", "T3", "T4", "T5", "T6"],
+      "branch": "feature/gateway-T8-tests",
+      "worktree": ".claude-worktrees/T8-tests",
+      "timeout_minutes": 75,
+      "acceptance": [
+        "dotnet test tests/LMS.IntegrationTests --filter Category=Gateway",
+        "All 7 test classes green"
+      ]
+    },
+    {
+      "id": "T9",
+      "agent": "haiku-helper",
+      "title": "Smoke + happy-path unit tests for transforms, header utils, rate-limit policy keys",
+      "spec": "Pure xUnit tests (no Testcontainers): HeaderForwardingTransform_StripsInboundForgery, HeaderForwardingTransform_AddsTrustedHeaders, TenantRateLimitPolicy_PartitionsByTenant, AnonymousRateLimitPolicy_PartitionsByIp, JwksHealthCheck_TimeoutReturnsUnhealthy. Land in tests/LMS.IntegrationTests/Gateway/Unit/.",
+      "files": [
+        "tests/LMS.IntegrationTests/Gateway/Unit/HeaderForwardingTransformTests.cs",
+        "tests/LMS.IntegrationTests/Gateway/Unit/RateLimitPolicyTests.cs",
+        "tests/LMS.IntegrationTests/Gateway/Unit/JwksHealthCheckTests.cs"
+      ],
+      "depends_on": ["T3", "T4", "T6"],
+      "branch": "feature/gateway-T9-unit-tests",
+      "worktree": ".claude-worktrees/T9-unit-tests",
+      "timeout_minutes": 30,
+      "acceptance": [
+        "dotnet test --filter FullyQualifiedName~Gateway.Unit"
+      ]
+    },
+    {
+      "id": "T10",
+      "agent": "security-auditor",
+      "title": "Security audit — JWT, header trust boundary, rate-limit bypass",
+      "spec": "Audit the gateway implementation for: (1) any path that proxies a request without re-stripping inbound X-User-Id/X-Tenant-Id/X-Roles/Authorization, (2) JWT validation skipping or downgrade, (3) rate-limit bypass via header manipulation or path casing, (4) CORS misconfiguration that allows credential leakage to wildcard origins, (5) health endpoints leaking info. Produce findings inline as a final agent message; flag any contract deviation. Cross-check against contracts.md.",
+      "files": [
+        "src/gateway/LMS.Gateway/**"
+      ],
+      "depends_on": ["T2", "T3", "T4", "T5", "T6", "T7"],
+      "branch": "feature/gateway-T10-security",
+      "worktree": ".claude-worktrees/T10-security",
+      "timeout_minutes": 30,
+      "acceptance": [
+        "Security findings report with severity, no Critical/High open"
+      ]
+    },
+    {
+      "id": "T11",
+      "agent": "reviewer",
+      "title": "Final code review against contracts.md + LMS absolute rules",
+      "spec": "Review all files changed in T1–T10. Verify: (a) JWT validated only at gateway, downstream never re-validates, (b) header names match contracts.md exactly, (c) feature flags not introduced (gateway has none), (d) no MassTransit usage in gateway, (e) all routes match the locked YARP table, (f) tests cover each acceptance criterion. Use code-reviewer skill output format.",
+      "files": [
+        "src/gateway/LMS.Gateway/**",
+        "src/LMS.AppHost/Program.cs",
+        "tests/LMS.IntegrationTests/Gateway/**"
+      ],
+      "depends_on": ["T8", "T9", "T10"],
+      "branch": "feature/gateway-T11-review",
+      "worktree": ".claude-worktrees/T11-review",
+      "timeout_minutes": 30,
+      "acceptance": [
+        "Reviewer report with no contract or absolute-rule violations"
+      ]
+    },
+    {
+      "id": "T12",
+      "agent": "docs-writer",
+      "title": "Update docs/architecture.md gateway section + add docs/services/gateway.md",
+      "spec": "Reflect the final implementation: locked headers, route table, rate-limit policy, CORS, health. Add a new docs/services/gateway.md following the per-service template (Port, ADRs, Responsibility, Endpoints, Key flows, Events published/consumed=None, Entities=None). Cross-link from docs/architecture.md.",
+      "files": [
+        "docs/architecture.md",
+        "docs/services/gateway.md"
+      ],
+      "depends_on": ["T11"],
+      "branch": "feature/gateway-T12-docs",
+      "worktree": ".claude-worktrees/T12-docs",
+      "timeout_minutes": 25,
+      "acceptance": [
+        "docs/services/gateway.md exists and matches shipped behavior",
+        "docs/architecture.md gateway section reflects locked contracts"
+      ]
+    }
+  ]
+}
