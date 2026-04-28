@@ -1,18 +1,20 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Infrastructure — fixed dev passwords so named volumes survive restarts
-var pgPassword       = builder.AddParameter("pg-password",       "lms_dev_pg",       secret: true);
-var mongoPassword    = builder.AddParameter("mongo-password",    "lms_dev_mongo",    secret: true);
-var redisPassword    = builder.AddParameter("redis-password",    "lms_dev_redis",    secret: true);
-var rabbitmqPassword = builder.AddParameter("rabbitmq-password", "lms_dev_rabbitmq", secret: true);
+// Infrastructure — passwords loaded from appsettings.json (override via appsettings.Development.json or user-secrets)
+var pgPassword       = builder.AddParameter("pg-password",       secret: true);
+var mongoPassword    = builder.AddParameter("mongo-password",    secret: true);
+var redisPassword    = builder.AddParameter("redis-password",    secret: true);
+var rabbitmqPassword = builder.AddParameter("rabbitmq-password", secret: true);
+var keycloakPassword = builder.AddParameter("keycloak-password", secret: true);
 
 var postgres = builder.AddPostgres("postgres", password: pgPassword).WithPgAdmin().WithDataVolume("lms-postgres-data");
 var mongo    = builder.AddMongoDB("mongo", password: mongoPassword).WithDataVolume("lms-mongo-data");
 var redis    = builder.AddRedis("redis", password: redisPassword).WithDataVolume("lms-redis-data");
 var rabbitmq = builder.AddRabbitMQ("rabbitmq", password: rabbitmqPassword).WithManagementPlugin().WithDataVolume("lms-rabbitmq-data");
-var keycloak = builder.AddKeycloak("keycloak", port: 8080)
+var keycloak = builder.AddKeycloak("keycloak", port: 8080, adminPassword: keycloakPassword)
                       .WithRealmImport("./keycloak/lms-realm.json")
-                      .WithDataVolume("lms-keycloak-data");
+                      .WithDataVolume("lms-keycloak-data")
+                      .WithUserProfileSchema("lms", keycloakPassword);
 
 // Databases — uncomment as each service is scaffolded
 var identityDb    = postgres.AddDatabase("lms-identity");
@@ -148,6 +150,7 @@ builder.AddProject<Projects.LMS_NotificationWorker>("notifications")
 
 // Frontend — React app via Vite dev server
 builder.AddNpmApp("frontend", "../frontend", "dev")
+    .WithNpmPackages()
     .WithReference(gateway)
     .WaitFor(gateway)
     .WithEnvironment("VITE_API_BASE_URL", gateway.GetEndpoint("http"))
