@@ -71,7 +71,7 @@ public sealed class ContentUploadedConsumer : IConsumer<ContentUploaded>
             await _bus.Publish(new ContentProcessingCompleted(
                 Guid.NewGuid(), item.Id, item.TenantId,
                 hlsUrl.ToString(), result.DurationSeconds,
-                DateTimeOffset.UtcNow), ct);
+                DateTimeOffset.UtcNow, msg.UploadedBy), ct);
 
             _logger.LogInformation("Processing complete for {Id}", item.Id);
         }
@@ -86,7 +86,7 @@ public sealed class ContentUploadedConsumer : IConsumer<ContentUploaded>
 
             await _bus.Publish(new ContentProcessingFailed(
                 Guid.NewGuid(), item.Id, item.TenantId,
-                ex.Message, DateTimeOffset.UtcNow), ct);
+                ex.Message, DateTimeOffset.UtcNow, msg.UploadedBy), ct);
 
             throw; // let MassTransit retry policy fire
         }
