@@ -12,7 +12,7 @@ var keycloak = builder.AddKeycloak("keycloak")
 var identityDb    = postgres.AddDatabase("lms-identity");
 var courseDb      = postgres.AddDatabase("lms-courses");
 // var courseDb      = postgres.AddDatabase("lms_courses");
-// var contentDb     = mongo.AddDatabase("lms_content");
+var contentDb     = mongo.AddDatabase("lms-content");
 // var enrollmentDb  = postgres.AddDatabase("lms_enrollment");
 // var progressDb    = postgres.AddDatabase("lms_progress");
 // var assessmentDb  = postgres.AddDatabase("lms_assessment");
@@ -48,6 +48,26 @@ var course = builder.AddProject<Projects.LMS_CourseService_Api>("courses")
     .WaitForCompletion(courseMigrator);
 
 gateway.WithReference(course);
+
+// ContentService
+var storage = builder.AddAzureStorage("storage").RunAsEmulator();
+var contentBlobs = storage.AddBlobs("content-blobs");
+
+var content = builder.AddProject<Projects.LMS_ContentService_Api>("content")
+    .WithReference(contentDb)
+    .WithReference(rabbitmq)
+    .WithReference(contentBlobs)
+    .WaitFor(contentDb)
+    .WaitFor(contentBlobs)
+    .WaitFor(rabbitmq);
+
+var contentWorker = builder.AddProject<Projects.LMS_ContentService_Worker>("content-worker")
+    .WithReference(contentDb)
+    .WithReference(rabbitmq)
+    .WithReference(contentBlobs)
+    .WaitFor(content);
+
+gateway.WithReference(content);
 
 // Services — uncomment as each service project is scaffolded
 

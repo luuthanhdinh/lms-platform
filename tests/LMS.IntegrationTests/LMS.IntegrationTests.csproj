@@ -20,5 +20,7 @@
     <ProjectReference Include="..\..\src\services\LMS.IdentityService\LMS.IdentityService.Api\LMS.IdentityService.Api.csproj" />
     <ProjectReference Include="..\..\src\services\LMS.CourseService\LMS.CourseService.Api\LMS.CourseService.Api.csproj" />
     <ProjectReference Include="..\..\src\services\LMS.CourseService\LMS.CourseService.Domain\LMS.CourseService.Domain.csproj" />
+    <ProjectReference Include="..\..\src\services\LMS.ContentService\LMS.ContentService.Domain\LMS.ContentService.Domain.csproj" />
+    <ProjectReference Include="..\..\src\services\LMS.ContentService\LMS.ContentService.Api\LMS.ContentService.Api.csproj" />
   </ItemGroup>
 </Project>

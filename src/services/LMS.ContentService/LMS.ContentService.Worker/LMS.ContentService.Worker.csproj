@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>LMS.ContentService.Worker</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Aspire.Azure.Storage.Blobs" Version="9.4.1-preview.1.25408.4" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.4.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LMS.ContentService.Infrastructure\LMS.ContentService.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\LMS.ServiceDefaults\LMS.ServiceDefaults.csproj" />
+  </ItemGroup>
+</Project>
