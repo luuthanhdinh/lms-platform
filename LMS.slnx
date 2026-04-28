@@ -1,10 +1,19 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/LMS.AppHost/LMS.AppHost.csproj" />
+    <Project Path="src/LMS.Contracts/LMS.Contracts.csproj" />
     <Project Path="src/LMS.ServiceDefaults/LMS.ServiceDefaults.csproj" />
+    <Project Path="src/LMS.SharedKernel/LMS.SharedKernel.csproj" />
   </Folder>
   <Folder Name="/src/gateway/">
     <Project Path="src/gateway/LMS.Gateway/LMS.Gateway.csproj" />
+  </Folder>
+  <Folder Name="/src/services/" />
+  <Folder Name="/src/services/LMS.IdentityService/">
+    <Project Path="src/services/LMS.IdentityService/LMS.IdentityService.Api/LMS.IdentityService.Api.csproj" />
+    <Project Path="src/services/LMS.IdentityService/LMS.IdentityService.Domain/LMS.IdentityService.Domain.csproj" />
+    <Project Path="src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/LMS.IdentityService.Infrastructure.csproj" />
+    <Project Path="src/services/LMS.IdentityService/LMS.IdentityService.Migrator/LMS.IdentityService.Migrator.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj" />

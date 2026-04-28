@@ -47,12 +47,12 @@ public class LessonCompletedConsumer(AppDbContext db)
 ```csharp
 // ── Identity & Enrollment ──────────────────────────────────────────────
 public record UserRegistered(
-    Guid UserId, Guid TenantId, string Email,
-    string DisplayName, DateTimeOffset OccurredAt);
+    Guid EventId, Guid TenantId, Guid UserId,
+    string Email, string DisplayName, DateTimeOffset OccurredAt);
 
 public record UserDeactivated(
-    Guid UserId, Guid TenantId, Guid DeactivatedBy,
-    DateTimeOffset OccurredAt);
+    Guid EventId, Guid TenantId, Guid UserId,
+    Guid DeactivatedBy, DateTimeOffset OccurredAt);
 
 public record UserEnrolled(
     Guid UserId, Guid CourseId, Guid TenantId,
@@ -244,6 +244,7 @@ public record LabSessionTerminated(
 | Event | Publisher | Consumers |
 |---|---|---|
 | `UserRegistered` | IdentityService | NotificationWorker |
+| `UserDeactivated` | IdentityService | EnrollmentService (suspend enrollments), NotificationWorker |
 | `UserEnrolled` | EnrollmentService | NotificationWorker |
 | `LessonCompleted` | ProgressService | GamificationService*, NotificationWorker |
 | `CourseCompleted` | ProgressService | CertificateService, GamificationService* |

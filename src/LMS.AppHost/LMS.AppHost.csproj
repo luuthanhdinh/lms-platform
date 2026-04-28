@@ -18,5 +18,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../gateway/LMS.Gateway/LMS.Gateway.csproj" />
+    <ProjectReference Include="../services/LMS.IdentityService/LMS.IdentityService.Api/LMS.IdentityService.Api.csproj" />
+    <ProjectReference Include="../services/LMS.IdentityService/LMS.IdentityService.Migrator/LMS.IdentityService.Migrator.csproj" />
   </ItemGroup>
 </Project>

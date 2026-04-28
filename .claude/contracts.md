@@ -1,136 +1,267 @@
 # Contracts (locked — do not deviate)
 _Hash: <sha256 of this file at lock time, filled by orchestrator>_
 
-Feature: **LMS.Gateway** — YARP reverse proxy, JWT validation (Keycloak JWKS),
-per-tenant rate limiting (Redis), header forwarding, CORS, health endpoints.
+Feature: **LMS.IdentityService** — User profile, tenant configuration, role assignment, and invite flow. Second Phase 1 service.
 
-Phase: **1**  ·  Service: `src/gateway/LMS.Gateway`  ·  Trust boundary: **gateway is the ONLY JWT verifier**.
+Phase: **1**  ·  Service: `src/services/LMS.IdentityService/`  ·  Trust boundary: **reads `X-User-Id`/`X-Tenant-Id`/`X-Roles` from gateway only — never validates JWT**.
+
+Port (logical): `identity` (Aspire service discovery; YARP cluster `identity` → `http://identity` already locked in `src/gateway/LMS.Gateway/appsettings.json`).
+DB: `lms_identity` (PostgreSQL).
+ADRs: ADR-001 (Keycloak realm strategy), ADR-002 (MFA enforcement).
 
 ---
 
-## Forwarded headers (locked — every downstream service reads these)
+## Trust model (locked)
 
-| Header        | Source claim                       | Format         | Required |
-|---------------|------------------------------------|----------------|----------|
-| `X-User-Id`   | `sub`                              | UUID string    | yes when authenticated |
-| `X-Tenant-Id` | `tenant_id` (custom Keycloak claim)| UUID string    | yes when authenticated |
-| `X-Roles`     | `realm_access.roles` (mapped to `ClaimTypes.Role`) | Comma-separated, no spaces (e.g. `student,instructor`) | yes when authenticated |
-| `X-Correlation-Id` | generated if absent           | GUID string    | always |
+Service trusts only the following headers, set by `LMS.Gateway`:
 
-Rules:
-- Gateway **strips** any inbound `X-User-Id`, `X-Tenant-Id`, `X-Roles`, `Authorization` header from the **outbound** request, then re-adds the trusted versions. Inbound forgeries must not survive.
-- Anonymous routes (only `verify`) forward neither auth headers nor correlation only.
-- Header names are **case-insensitive on read** but emitted exactly as above.
+| Header        | Format       | Required for non-anonymous endpoints |
+|---------------|--------------|--------------------------------------|
+| `X-User-Id`   | UUID         | yes                                  |
+| `X-Tenant-Id` | UUID         | yes                                  |
+| `X-Roles`     | comma list   | yes (e.g. `student`, `org-admin`)    |
+| `X-Correlation-Id` | GUID    | always (forwarded by gateway)        |
 
-## Auth policy (locked)
+- **No JWT validation in this service.** The `Authorization` header is stripped by YARP and must NOT be re-honoured.
+- Missing/malformed `X-User-Id` or `X-Tenant-Id` on protected endpoints → `401 { "code": "UNAUTHENTICATED" }`.
+- Role gate failures → `403 { "code": "FORBIDDEN" }`.
+- All EF queries pass through the global `TenantId` filter; the resolved tenant comes from `X-Tenant-Id` via a scoped `ITenantContext` provider.
 
-- Scheme: `JwtBearerDefaults.AuthenticationScheme` (single).
-- Authority: `Keycloak:Authority` (e.g. `http://keycloak:8080/realms/lms`).
-- Audience: `Keycloak:Audience` = `lms-api`.
-- `RequireHttpsMetadata` = `false` in Development, `true` otherwise.
-- JWKS auto-fetched from `{Authority}/protocol/openid-connect/certs`; cached by `Microsoft.IdentityModel`.
-- Default authorization policy: `RequireAuthenticatedUser`. Routes opt out via `AuthorizationPolicy: "anonymous"` in YARP config.
-- Roles claim mapped to `ClaimTypes.Role` via `TokenValidationParameters.RoleClaimType = "realm_access.roles"` (handled by `JwtBearerEvents.OnTokenValidated` flattening `realm_access.roles[]`).
-- 401 body: `{ "code": "UNAUTHENTICATED", "message": "..." }`.
-- 403 body: `{ "code": "FORBIDDEN", "message": "..." }`.
+## Roles (locked enum values, lowercase wire form)
 
-## YARP routes (locked — Phase 1)
+| Wire value    | UserRole enum    |
+|---------------|------------------|
+| `student`     | `Student`        |
+| `instructor`  | `Instructor`     |
+| `admin`       | `Admin`          |
+| `org-admin`   | `OrgAdmin`       |
 
-All routes match `/api/{prefix}/{**rest}` and proxy to a logical Aspire-discovered cluster `http://{name}`.
+Authorization rules:
+- `GET /api/identity/profile/me`, `PUT /api/identity/profile/me`, `POST /api/identity/profile` → any authenticated role.
+- `GET /api/identity/users`, `POST /api/identity/users/invite`, `PATCH /api/identity/users/{id}/role`, `PATCH /api/identity/users/{id}/deactivate`, `PUT /api/identity/tenant` → `org-admin` OR `admin`.
+- `GET /api/identity/tenant` → any authenticated role.
 
-| Route id     | Path pattern                       | ClusterId    | Auth        |
-|--------------|------------------------------------|--------------|-------------|
-| `identity`   | `/api/identity/{**rest}`           | `identity`   | required    |
-| `courses`    | `/api/courses/{**rest}`            | `courses`    | required    |
-| `content`    | `/api/content/{**rest}`            | `content`    | required    |
-| `enrollment` | `/api/enrollments/{**rest}`        | `enrollment` | required    |
-| `progress`   | `/api/progress/{**rest}`           | `progress`   | required    |
-| `assessment` | `/api/assessments/{**rest}`        | `assessment` | required    |
-| `certificate`| `/api/certificates/{**rest}`       | `certificate`| required    |
-| `verify`     | `/verify/{**rest}`                 | `certificate`| **anonymous** |
+---
 
-Clusters (logical names; resolved via Aspire service discovery):
-`identity`, `courses`, `content`, `enrollment`, `progress`, `assessment`, `certificate`.
+## HTTP endpoints (locked)
 
-Notes:
-- Path is **forwarded as-is** to the destination (no path strip). Downstream services own `/api/{prefix}/...` routes.
-- Health, rate-limit, and auth metadata live on routes, not clusters.
+All endpoints prefixed `/api/identity`. All return `application/json`. Errors use `{ "code": "<UPPER_SNAKE>", "message": "...", "details"?: {...} }`. Validation errors use RFC7807 `ValidationProblem`.
 
-## Rate-limit policy (locked)
+### Profile
 
-- Storage: Redis (`StackExchange.Redis` via Aspire `WithReference(redis)`).
-- Algorithm: `FixedWindowLimiter` over Redis (custom `IDistributedRateLimiter` shim or `RedisRateLimiting` package — implementer chooses; key & limits are locked).
-- Window: **60 seconds**.
-- Default per-tenant limit: **600 req/min** (configurable via `RateLimit:PerTenantPerMinute`).
-- Anonymous (per-IP) limit on `/verify/{**rest}` and `/health*`: **60 req/min** per remote IP (`RateLimit:AnonymousPerMinute`).
-- Partition keys:
-  - Authenticated: `tenant:{X-Tenant-Id}` (after JWT validation).
-  - Anonymous: `ip:{RemoteIpAddress}`.
-- Exceeded response: `429 Too Many Requests` with body
-  `{ "code": "RATE_LIMITED", "message": "Too many requests", "retryAfterSeconds": <int> }`
-  and `Retry-After` header.
-- Health endpoints (`/health`, `/health/live`, `/health/ready`) are **exempt** from rate limiting.
-- Disabled in `Development` only when `RateLimit:Enabled=false`. Default is enabled.
-
-## CORS policy (locked)
-
-- Policy name: `frontend` (matches the per-service template in architecture.md).
-- Allowed origins: `Cors:AllowedOrigins` array; default `["http://localhost:5173"]`.
-- `AllowAnyHeader`, `AllowAnyMethod`, `AllowCredentials = true`.
-- Preflight cache: 600s.
-- Applied **only on the gateway** (downstream services also include the same policy per architecture.md template, but browser only ever talks to the gateway).
-
-## Health endpoints (locked)
-
-| Path           | Tags filter                  | Purpose                          |
-|----------------|------------------------------|----------------------------------|
-| `/health`      | all                          | aggregate liveness + readiness   |
-| `/health/live` | (none — process up)          | liveness probe                   |
-| `/health/ready`| `ready`                      | readiness probe; checks JWKS reachable + Redis reachable |
-
-- Provided by `MapDefaultEndpoints()` from `LMS.ServiceDefaults`. Add JWKS + Redis health checks tagged `ready`.
-- Exempt from auth and rate limiting.
-
-## Events published / consumed
-
-**None.** The gateway is a stateless proxy and does not participate in MassTransit. All async messaging stays inside services.
-
-(Note: the architecture doc mentions an "upsert profile on new JWT" flow. In Phase 1 this is implemented by the **frontend** calling `POST /api/identity/profile` after first login, not by the gateway. The gateway never originates HTTP calls to services.)
-
-## Configuration surface (locked keys)
-
-```jsonc
-{
-  "Keycloak": { "Authority": "...", "Audience": "lms-api" },
-  "Cors":     { "AllowedOrigins": ["http://localhost:5173"] },
-  "RateLimit": {
-    "Enabled": true,
-    "PerTenantPerMinute": 600,
-    "AnonymousPerMinute": 60,
-    "WindowSeconds": 60
-  },
-  "ReverseProxy": { "Routes": { ... }, "Clusters": { ... } }
-}
+```
+GET  /api/identity/profile/me                  → 200 UserProfileDto | 404 PROFILE_NOT_FOUND
+PUT  /api/identity/profile/me                  ← UpdateProfileRequest      → 200 UserProfileDto | 400 ValidationProblem | 404 PROFILE_NOT_FOUND
+POST /api/identity/profile                     ← UpsertProfileRequest      → 200 UserProfileDto (existing) | 201 UserProfileDto (created) | 400 ValidationProblem
 ```
 
-## Entity changes
+`POST /api/identity/profile` is **idempotent**. Called by the frontend on first login (gateway never originates calls — see `.claude/contracts.md` for gateway). Matches on `(TenantId, KeycloakId)`. On create, publishes `UserRegistered`. On update, no event.
 
-**None.** Gateway has no database.
+### User administration (`org-admin` | `admin`)
+
+```
+GET   /api/identity/users                      ?role=&active=&search=&page=&pageSize=
+                                               → 200 PagedResult<UserSummaryDto>
+POST  /api/identity/users/invite               ← InviteUserRequest   → 201 UserInviteDto | 400 ValidationProblem | 409 INVITE_DUPLICATE
+PATCH /api/identity/users/{id}/role            ← { "role": "instructor" }
+                                               → 200 UserProfileDto | 400 ValidationProblem | 404 USER_NOT_FOUND
+PATCH /api/identity/users/{id}/deactivate      → 204 | 404 USER_NOT_FOUND | 409 ALREADY_DEACTIVATED
+```
+
+### Tenant configuration
+
+```
+GET /api/identity/tenant                       → 200 TenantConfigDto | 404 TENANT_NOT_FOUND
+PUT /api/identity/tenant                       ← UpdateTenantRequest → 200 TenantConfigDto | 400 ValidationProblem
+```
+
+### DTO shapes (locked)
+
+```csharp
+public record UserProfileDto(
+    Guid Id, Guid TenantId, string KeycloakId, string Email, string DisplayName,
+    string? AvatarUrl, string? Bio, string Timezone, string Language,
+    string Role, bool IsActive, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+
+public record UserSummaryDto(
+    Guid Id, string Email, string DisplayName, string Role, bool IsActive,
+    DateTimeOffset CreatedAt);
+
+public record UpsertProfileRequest(
+    string KeycloakId, string Email, string DisplayName,
+    string? AvatarUrl, string? Timezone, string? Language);
+
+public record UpdateProfileRequest(
+    string DisplayName, string? AvatarUrl, string? Bio,
+    string? Timezone, string? Language);
+
+public record InviteUserRequest(string Email, string Role);
+
+public record UserInviteDto(
+    Guid Id, string Email, string Role, string Token,
+    DateTimeOffset ExpiresAt, bool IsAccepted, DateTimeOffset CreatedAt);
+
+public record TenantConfigDto(
+    Guid Id, string Name, string? LogoUrl, string Timezone,
+    string[] AllowedEmailDomains, string Plan,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+
+public record UpdateTenantRequest(
+    string Name, string? LogoUrl, string? Timezone, string[]? AllowedEmailDomains);
+
+public record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int Total);
+```
+
+Validation:
+- `Email` — RFC5322 + (when tenant has `AllowedEmailDomains`) domain whitelist enforced on `InviteUserRequest`.
+- `DisplayName` — 1–120 chars.
+- `Timezone` — IANA TZ id (`TimeZoneInfo.TryConvertIanaIdToWindowsId`-validated).
+- `Language` — ISO 639-1 (`vi`, `en`, …).
+- `Role` (incoming string) — must map to `UserRole` enum (case-insensitive, kebab → enum).
+
+---
+
+## EF Core entities (locked)
+
+All entities inherit `TenantEntity` (`Id: Guid`, `TenantId: Guid`, `CreatedAt: DateTimeOffset`, `UpdatedAt: DateTimeOffset`). DbContext: `IdentityDbContext` in `LMS.IdentityService.Infrastructure`. Schema: `identity`. Global query filter on `TenantId == _tenantContext.TenantId` for **every** entity.
+
+### `user_profiles`
+
+| Column        | Type                | Notes                                    |
+|---------------|---------------------|------------------------------------------|
+| Id            | uuid (PK)           |                                          |
+| TenantId      | uuid (idx, filter)  |                                          |
+| KeycloakId    | text (NOT NULL)     | unique within tenant: `(TenantId, KeycloakId)` |
+| Email         | citext / text lower | unique within tenant: `(TenantId, Email)`|
+| DisplayName   | text                |                                          |
+| AvatarUrl     | text? nullable      |                                          |
+| Bio           | text? nullable      | max 2000 chars                           |
+| Timezone      | text NOT NULL       | default `Asia/Ho_Chi_Minh`               |
+| Language      | text NOT NULL       | default `vi`                             |
+| Role          | int (UserRole)      | default `Student`                        |
+| IsActive      | bool NOT NULL       | default `true`                           |
+| CreatedAt/UpdatedAt | timestamptz   |                                          |
+
+Indexes:
+- `UX_UserProfile_Tenant_Keycloak` UNIQUE on `(TenantId, KeycloakId)`
+- `UX_UserProfile_Tenant_Email` UNIQUE on `(TenantId, Email)`
+- `IX_UserProfile_Tenant_Role` on `(TenantId, Role)`
+
+### `tenant_configs`
+
+| Column              | Type           | Notes                                       |
+|---------------------|----------------|---------------------------------------------|
+| Id                  | uuid (PK)      | equals TenantId (1:1 with tenant)           |
+| TenantId            | uuid           | == Id (filter still applies)                |
+| Name                | text NOT NULL  |                                             |
+| LogoUrl             | text? nullable |                                             |
+| Timezone            | text NOT NULL  | default `Asia/Ho_Chi_Minh`                  |
+| AllowedEmailDomains | text[]         | default `{}`                                |
+| Plan                | int (TenantPlan) | default `Free`                            |
+| CreatedAt/UpdatedAt | timestamptz    |                                             |
+
+Indexes:
+- `UX_TenantConfig_TenantId` UNIQUE on `(TenantId)`
+
+### `user_invites`
+
+| Column       | Type           | Notes                                       |
+|--------------|----------------|---------------------------------------------|
+| Id           | uuid (PK)      |                                             |
+| TenantId     | uuid (filter)  |                                             |
+| Email        | text NOT NULL  |                                             |
+| Role         | int (UserRole) |                                             |
+| Token        | text NOT NULL  | 32-hex `Guid.NewGuid().ToString("N")`       |
+| ExpiresAt    | timestamptz    | default `now() + 7 days`                    |
+| IsAccepted   | bool NOT NULL  | default `false`                             |
+| CreatedAt/UpdatedAt | timestamptz |                                            |
+
+Indexes:
+- `UX_UserInvite_Token` UNIQUE on `(Token)`
+- `IX_UserInvite_Tenant_Email_Pending` on `(TenantId, Email)` `WHERE IsAccepted = false`
+
+### Migration
+
+- Initial migration filename: `20260427000001_InitialIdentity.cs` in `LMS.IdentityService.Migrator/Migrations/`.
+- Migration is run by the Aspire-hosted `LMS.IdentityService.Migrator` job; AppHost gates `LMS.IdentityService.Api` on `WaitForCompletion(migrator)`.
+
+---
+
+## MassTransit events (locked — defined in `LMS.Contracts`)
+
+These records ALREADY exist (by docs/events.md spec) — the events-architect task is to **add** them to `LMS.Contracts` if not yet present, otherwise verify shape match. No re-definition inside the service.
+
+```csharp
+public record UserRegistered(
+    Guid UserId, Guid TenantId, string Email,
+    string DisplayName, DateTimeOffset OccurredAt);
+
+public record UserDeactivated(
+    Guid UserId, Guid TenantId, Guid DeactivatedBy,
+    DateTimeOffset OccurredAt);
+```
+
+**Published by IdentityService:**
+- `UserRegistered` — on first successful upsert (insert path of `POST /api/identity/profile`).
+- `UserDeactivated` — on `PATCH /api/identity/users/{id}/deactivate` success.
+
+**Consumed by IdentityService:** none in Phase 1.
+
+Publishing rules:
+- Use `IPublishEndpoint`. Event publish happens **inside the same EF transaction** via the MassTransit transactional outbox (added in this service per `masstransit-events` skill).
+- `OccurredAt = DateTimeOffset.UtcNow` at publish time.
+- Idempotency: re-running `POST /api/identity/profile` for an existing `(TenantId, KeycloakId)` MUST NOT republish `UserRegistered`.
+
+---
+
+## YARP gateway route (already locked — verification only)
+
+Route id `identity` → `/api/identity/{**rest}` → cluster `identity` → `http://identity`. Already present in `src/gateway/LMS.Gateway/appsettings.json`. **No gateway changes required** for this feature. The `gateway-ops` task ONLY adds the AppHost `WithReference(identity)` wiring.
+
+---
+
+## Aspire AppHost wiring (locked surface)
+
+In `src/LMS.AppHost/Program.cs`:
+
+```
+var identityDb = postgres.AddDatabase("lms_identity");
+var identityMigrator = builder.AddProject<Projects.LMS_IdentityService_Migrator>("identity-migrator")
+    .WithReference(identityDb).WaitFor(identityDb);
+var identity = builder.AddProject<Projects.LMS_IdentityService_Api>("identity")
+    .WithReference(identityDb).WithReference(rabbit).WithReference(redis)
+    .WaitForCompletion(identityMigrator);
+gateway.WithReference(identity);
+```
+
+(Resource names `identity-migrator` and `identity` are locked because YARP cluster destination is `http://identity`.)
+
+---
+
+## Feature flags
+
+**None introduced.** All endpoints in this service are Phase 1 / always-on.
+
+---
 
 ## Frontend impact
 
-- Frontend `apiClient` base URL = gateway endpoint (already wired in AppHost via `VITE_API_BASE_URL`).
-- 401 from any downstream surfaces as `code=UNAUTHENTICATED`; frontend triggers Keycloak re-login.
-- 429 surfaces as `code=RATE_LIMITED`; frontend should respect `Retry-After`.
+Out of scope for this feature plan (frontend hooks for profile/me will be planned with the React frontend feature). DTO shapes above are the contract the frontend will bind to.
+
+---
 
 ## Cross-service flows
 
-- **Every** Phase 1 service relies on `X-User-Id`, `X-Tenant-Id`, `X-Roles`. The header names locked above are the contract for all 9 downstream services.
-- Aspire `WithReference(gateway)` is used by the frontend resource only; downstream services do not reference the gateway.
-- AppHost wires `gateway.WithReference(keycloak).WithReference(redis)` plus `WithReference` to **each** Phase 1 service so YARP can resolve them via service discovery.
+- `UserRegistered` → consumed by `NotificationWorker` (welcome email) per `docs/events.md`.
+- `UserDeactivated` → consumed by `EnrollmentService` (suspend active enrollments) per `docs/events.md`.
+- Neither consumer is implemented in this feature; only the publish side and contract shape are locked here.
 
-## Open questions / non-goals
+---
 
-- **Phase 1 scope:** no request signing, no mTLS to backends (relies on cluster network).
-- **JWKS caching TTL** uses Microsoft default (12h refresh, 1d expiration). Not tunable in Phase 1.
-- **Per-route overrides** for rate limits are out of scope for Phase 1.
+## Decisions (locked — approved by product owner 2026-04-27)
+
+1. **Tenant bootstrap** — On application startup (Migrator run), if no `TenantConfig` row exists, seed a **master tenant** with a fixed well-known `TenantId` (config key `Seeding:MasterTenantId`, default `00000000-0000-0000-0000-000000000001`). This master tenant is the default org. Subsequent tenant rows are created via an admin operation (out of scope Phase 1). First user upsert into a tenant that lacks a `TenantConfig` still returns `409 TENANT_NOT_PROVISIONED` (master tenant is pre-seeded so day-1 logins always succeed).
+
+2. **Invite acceptance** — No dedicated `/accept` endpoint in Phase 1. `POST /api/identity/profile` upsert automatically marks the most-recent pending `UserInvite` for `(TenantId, Email)` as `IsAccepted = true` if found. Documented behaviour, not a bug.
+
+3. **Service layout** — 4-project layout at `src/services/LMS.IdentityService/` confirmed.
