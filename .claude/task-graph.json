@@ -1,240 +1,198 @@
 {
-  "feature": "LMS.IdentityService — user profile, tenant config, invites, role mgmt (Phase 1 service #2)",
+  "feature": "LMS.CourseService — course catalog, lifecycle (draft/published/archived), section+lesson CRUD, payment gate stub, MassTransit publish/consume",
   "phase": 1,
   "complexity": "L",
-  "contracts_ref": ".claude/contracts.md",
   "tasks": [
     {
       "id": "T1",
-      "title": "Lock UserRegistered + UserDeactivated event records in LMS.Contracts",
       "agent": "events-architect",
-      "description": "Add (or verify) the two MassTransit event records exactly per docs/events.md and contracts.md.",
-      "spec": "Create/verify records in src/LMS.Contracts/Identity/, namespace LMS.Contracts.Identity. Shapes: UserRegistered(Guid UserId, Guid TenantId, string Email, string DisplayName, DateTimeOffset OccurredAt); UserDeactivated(Guid UserId, Guid TenantId, Guid DeactivatedBy, DateTimeOffset OccurredAt). No inline event definitions allowed elsewhere.",
-      "files": [
-        "src/LMS.Contracts/Identity/UserRegistered.cs",
-        "src/LMS.Contracts/Identity/UserDeactivated.cs",
-        "src/LMS.Contracts/LMS.Contracts.csproj"
-      ],
+      "title": "Lock CoursePublished event in LMS.Contracts",
+      "spec": "Add src/LMS.Contracts/Course/CoursePublished.cs as a sealed record exactly per .claude/contracts.md section 2 (EventId, TenantId, CourseId, InstructorId, Version, OccurredAt). Mirror the XML-doc style of src/LMS.Contracts/Identity/UserRegistered.cs. Verify ContentProcessingCompleted and UserEnrolled records are present (or stub minimal records under LMS.Contracts/Content and LMS.Contracts/Identity if missing) — do NOT modify their shapes beyond what events.md already prescribes. Defer the docs/events.md EventId update to T11.",
+      "files": ["src/LMS.Contracts/Course/CoursePublished.cs"],
       "depends_on": [],
-      "branch": "feature/identity-T1-events",
-      "worktree": ".claude-worktrees/T1-identity-events",
-      "timeout_minutes": 20,
+      "branch": "feature/courseservice-T1-events",
+      "worktree": ".claude-worktrees/T1-courseservice-events",
+      "timeout_minutes": 15,
       "acceptance": ["dotnet build src/LMS.Contracts/LMS.Contracts.csproj"]
     },
     {
       "id": "T2",
-      "title": "Scaffold 4-project IdentityService solution layout",
       "agent": "backend",
-      "description": "Create empty Domain/Infrastructure/Api/Migrator projects under src/services/LMS.IdentityService/, add to LMS.slnx, set ServiceDefaults + LMS.SharedKernel + LMS.Contracts references; no business code yet.",
-      "spec": "Use /scaffold-service IdentityService conventions. Output: 4 csproj + Program.cs stubs (Api + Migrator) compiling against ServiceDefaults. Migrator is a worker that runs IdentityDbContext.Database.Migrate() then exits 0.",
+      "title": "Scaffold 4-project layout for LMS.CourseService",
+      "spec": "Create the four projects under src/services/LMS.CourseService/ (Domain, Infrastructure, Api, Migrator) with project references mirroring LMS.IdentityService exactly. Add the projects to LMS.slnx. Empty class-library shells (no implementation), Program.cs stubs in Api+Migrator. ServiceDefaults reference on Api+Migrator, LMS.Contracts reference on Infrastructure+Api, LMS.SharedKernel reference on Domain. Use port 5102 in Api launchSettings.json.",
       "files": [
-        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/LMS.IdentityService.Domain.csproj",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/LMS.IdentityService.Infrastructure.csproj",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/LMS.IdentityService.Api.csproj",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Program.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Migrator/LMS.IdentityService.Migrator.csproj",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Migrator/Program.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/LMS.CourseService.Domain.csproj",
+        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/LMS.CourseService.Infrastructure.csproj",
+        "src/services/LMS.CourseService/LMS.CourseService.Api/LMS.CourseService.Api.csproj",
+        "src/services/LMS.CourseService/LMS.CourseService.Api/Program.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Api/Properties/launchSettings.json",
+        "src/services/LMS.CourseService/LMS.CourseService.Migrator/LMS.CourseService.Migrator.csproj",
+        "src/services/LMS.CourseService/LMS.CourseService.Migrator/Program.cs",
         "LMS.slnx"
       ],
       "depends_on": [],
-      "branch": "feature/identity-T2-scaffold",
-      "worktree": ".claude-worktrees/T2-identity-scaffold",
-      "timeout_minutes": 30,
+      "branch": "feature/courseservice-T2-scaffold",
+      "worktree": ".claude-worktrees/T2-courseservice-scaffold",
+      "timeout_minutes": 25,
       "acceptance": ["dotnet build LMS.slnx"]
     },
     {
       "id": "T3",
-      "title": "Domain layer — entities, enums, repository interfaces",
       "agent": "backend",
-      "description": "Implement UserProfile, TenantConfig, UserInvite (inheriting TenantEntity from SharedKernel), enums UserRole/TenantPlan, and repository contracts.",
-      "spec": "Per contracts.md entity table. Define: IUserProfileRepository, ITenantConfigRepository, IUserInviteRepository (async, take CancellationToken). Domain has no EF dependency.",
+      "title": "Domain layer: entities, enums, repository interfaces, ITenantContext, DTOs",
+      "spec": "Implement all entities exactly per contracts.md section 1 (Course, CourseSection, CourseLesson, CoursePrerequisite, CourseSnapshot, CourseStatus, DifficultyLevel). Replicate ITenantContext + AuthorizationHelpers patterns from LMS.IdentityService.Domain (do NOT cross-reference). Define repository interfaces (ICourseRepository, ISectionRepository, ILessonRepository, ICourseSnapshotRepository) with explicit tenantId predicates. Add request/response DTO records per contracts.md section 3.",
       "files": [
-        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Entities/UserProfile.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Entities/TenantConfig.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Entities/UserInvite.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Enums/UserRole.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Enums/TenantPlan.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Repositories/IUserProfileRepository.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Repositories/ITenantConfigRepository.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Domain/Repositories/IUserInviteRepository.cs"
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Entities/Course.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Entities/CourseSection.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Entities/CourseLesson.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Entities/CoursePrerequisite.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Entities/CourseSnapshot.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Enums/CourseStatus.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Enums/DifficultyLevel.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Abstractions/ITenantContext.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Abstractions/AuthorizationHelpers.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Repositories/ICourseRepository.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Repositories/ISectionRepository.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Repositories/ILessonRepository.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Repositories/ICourseSnapshotRepository.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Domain/Dtos/CourseDtos.cs"
       ],
       "depends_on": ["T2"],
-      "branch": "feature/identity-T3-domain",
-      "worktree": ".claude-worktrees/T3-identity-domain",
-      "timeout_minutes": 30,
-      "acceptance": ["dotnet build src/services/LMS.IdentityService/LMS.IdentityService.Domain"]
+      "branch": "feature/courseservice-T3-domain",
+      "worktree": ".claude-worktrees/T3-courseservice-domain",
+      "timeout_minutes": 45,
+      "acceptance": ["dotnet build src/services/LMS.CourseService/LMS.CourseService.Domain/LMS.CourseService.Domain.csproj"]
     },
     {
       "id": "T4",
-      "title": "Infrastructure — IdentityDbContext, configurations, repositories, MassTransit",
       "agent": "backend",
-      "description": "EF Core DbContext with global TenantId filter, fluent configurations, repository implementations, MassTransit registration with EF Core transactional outbox, ITenantContext implementation reading X-Tenant-Id.",
-      "spec": "Per tenant-isolation skill. Schema 'identity'. Configure indexes per contracts.md. Register repositories + ITenantContext (HttpContextAccessor-based) + MassTransit (AddEntityFrameworkOutbox<IdentityDbContext>). NO consumers in Phase 1.",
+      "title": "Infrastructure: CourseDbContext + EF configs + repositories + MassTransit consumers",
+      "spec": "Implement CourseDbContext (schema 'courses') replicating IdentityDbContext global tenant filter and SaveChangesAsync UpdatedAt logic. Add EF entity configurations with indexes per contracts.md section 1. Implement all repository EF impls. Add MassTransit consumers: ContentProcessingCompletedConsumer (updates CourseLesson.DurationSeconds), UserEnrolledConsumer (increments Course.EnrollmentCount, idempotent via inbox table on (UserId, CourseId)). Wire AddEntityFrameworkOutbox<CourseDbContext>. Provide DependencyInjection extension AddCourseInfrastructure(IConfiguration). Use Npgsql text[] for Tags and jsonb for StructureJson.",
       "files": [
-        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/IdentityDbContext.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/Configurations/UserProfileConfiguration.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/Configurations/TenantConfigConfiguration.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/Configurations/UserInviteConfiguration.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/Repositories/UserProfileRepository.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/Repositories/TenantConfigRepository.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Persistence/Repositories/UserInviteRepository.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/Tenancy/HttpTenantContext.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure/DependencyInjection.cs"
+        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Data/CourseDbContext.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Data/Configurations/",
+        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Repositories/",
+        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Messaging/Consumers/ContentProcessingCompletedConsumer.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Messaging/Consumers/UserEnrolledConsumer.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/DependencyInjection.cs"
       ],
       "depends_on": ["T1", "T3"],
-      "branch": "feature/identity-T4-infra",
-      "worktree": ".claude-worktrees/T4-identity-infra",
+      "branch": "feature/courseservice-T4-infra",
+      "worktree": ".claude-worktrees/T4-courseservice-infra",
       "timeout_minutes": 60,
-      "acceptance": ["dotnet build src/services/LMS.IdentityService/LMS.IdentityService.Infrastructure"]
+      "acceptance": ["dotnet build src/services/LMS.CourseService/LMS.CourseService.Infrastructure/LMS.CourseService.Infrastructure.csproj"]
     },
     {
       "id": "T5",
-      "title": "Initial EF Core migration 20260427000001_InitialIdentity",
       "agent": "db-migrator",
-      "description": "Generate initial migration covering user_profiles, tenant_configs, user_invites + outbox tables.",
-      "spec": "dotnet ef migrations add InitialIdentity. Confirm reversible (Down). Include MassTransit outbox tables. Filename per contracts.md.",
+      "title": "Initial EF migration + Migrator host",
+      "spec": "Generate 20260427_001_InitialCourseSchema migration covering all entities, indexes per contracts.md section 1, and MassTransit outbox/inbox tables. Implement Migrator Program.cs as an IHostedService that calls db.Database.MigrateAsync() and exits cleanly so Aspire WaitForCompletion works. Use the dotnet-ef-migrations skill.",
       "files": [
-        "src/services/LMS.IdentityService/LMS.IdentityService.Migrator/Migrations/20260427000001_InitialIdentity.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Migrator/Migrations/IdentityDbContextModelSnapshot.cs"
+        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Migrations/20260427_001_InitialCourseSchema.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Infrastructure/Migrations/CourseDbContextModelSnapshot.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Migrator/Program.cs"
       ],
       "depends_on": ["T4"],
-      "branch": "feature/identity-T5-migration",
-      "worktree": ".claude-worktrees/T5-identity-migration",
+      "branch": "feature/courseservice-T5-migration",
+      "worktree": ".claude-worktrees/T5-courseservice-migration",
       "timeout_minutes": 30,
       "acceptance": [
-        "dotnet ef migrations list --project src/services/LMS.IdentityService/LMS.IdentityService.Migrator",
-        "dotnet build"
+        "dotnet build src/services/LMS.CourseService/LMS.CourseService.Migrator/LMS.CourseService.Migrator.csproj",
+        "dotnet ef migrations list --project src/services/LMS.CourseService/LMS.CourseService.Infrastructure --startup-project src/services/LMS.CourseService/LMS.CourseService.Migrator"
       ]
     },
     {
       "id": "T6",
-      "title": "API layer — Minimal API endpoints, validators, header auth, error mapping",
       "agent": "backend",
-      "description": "Implement all 9 endpoints per contracts.md, FluentValidation validators, header-trust authentication handler, role-based authorization, Result<T> → ProblemDetails mapping, OpenAPI.",
-      "spec": "Endpoint groups: /profile/me, /profile, /users, /users/invite, /users/{id}/role, /users/{id}/deactivate, /tenant. FluentValidation; RFC7807 ValidationProblem; non-validation errors as {code,message}. Publish UserRegistered (insert path) and UserDeactivated via IPublishEndpoint inside SaveChanges (outbox). DO NOT add JwtBearer; only HeaderAuthenticationHandler that fabricates ClaimsPrincipal from X-User-Id/X-Tenant-Id/X-Roles. Role wire form is kebab-case lowercase.",
+      "title": "Api layer: endpoints, validators, payment gate, publish flow, Program.cs",
+      "spec": "Implement all endpoints per contracts.md section 3, payment gate per section 4, publish flow per section 5. Use Minimal API + endpoint groups. HeaderTenantContext middleware reads X-User-Id, X-Tenant-Id, X-Roles. Use FluentValidation for request DTOs. Public endpoints (GET catalogue, GET detail, GET syllabus) bypass auth. Owner-instructor checks via AuthorizationHelpers. Outbox-publish CoursePublished from publish endpoint. Wire ServiceDefaults, MassTransit, OpenTelemetry, FeatureManagement, ProblemDetails, AddCourseInfrastructure().",
       "files": [
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Endpoints/ProfileEndpoints.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Endpoints/UsersEndpoints.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Endpoints/TenantEndpoints.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Validators/UpsertProfileRequestValidator.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Validators/UpdateProfileRequestValidator.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Validators/InviteUserRequestValidator.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Validators/UpdateTenantRequestValidator.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Auth/HeaderAuthenticationHandler.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Auth/RoleAuthorizationPolicies.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/ErrorHandling/ResultExtensions.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Contracts/Dtos.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Program.cs"
+        "src/services/LMS.CourseService/LMS.CourseService.Api/Program.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Api/Endpoints/",
+        "src/services/LMS.CourseService/LMS.CourseService.Api/Validators/",
+        "src/services/LMS.CourseService/LMS.CourseService.Api/Tenancy/HeaderTenantContext.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Api/Tenancy/TenantHeaderMiddleware.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Api/Authorization/AuthorizationHelpers.cs",
+        "src/services/LMS.CourseService/LMS.CourseService.Api/Errors/PaymentRequiredProblem.cs"
       ],
       "depends_on": ["T4"],
-      "branch": "feature/identity-T6-api",
-      "worktree": ".claude-worktrees/T6-identity-api",
-      "timeout_minutes": 90,
-      "acceptance": [
-        "dotnet build src/services/LMS.IdentityService/LMS.IdentityService.Api"
-      ]
+      "branch": "feature/courseservice-T6-api",
+      "worktree": ".claude-worktrees/T6-courseservice-api",
+      "timeout_minutes": 75,
+      "acceptance": ["dotnet build src/services/LMS.CourseService/LMS.CourseService.Api/LMS.CourseService.Api.csproj"]
     },
     {
       "id": "T7",
-      "title": "Aspire AppHost wiring — register identity-migrator + identity",
       "agent": "gateway-ops",
-      "description": "Add Postgres database, migrator project, api project, RabbitMQ + Redis references, gateway.WithReference(identity).",
-      "spec": "Modify src/LMS.AppHost/Program.cs per contracts.md AppHost block. Resource names locked: 'identity-migrator', 'identity'. AppHost project references for both new projects added. Api WaitForCompletion(migrator).",
+      "title": "Aspire AppHost + Gateway YARP wiring for /api/courses/**",
+      "spec": "Apply the AppHost diff in contracts.md section 7 (uncomment courseDb, add courseMigrator, course, gateway.WithReference(course)). Add YARP route + cluster in Gateway appsettings.json so /api/courses/{**catch-all} forwards to the courses resource, with header-forwarding transform applied. Health endpoint check.",
       "files": [
         "src/LMS.AppHost/Program.cs",
-        "src/LMS.AppHost/LMS.AppHost.csproj"
+        "src/LMS.AppHost/LMS.AppHost.csproj",
+        "src/gateway/LMS.Gateway/appsettings.json",
+        "src/gateway/LMS.Gateway/appsettings.Development.json"
       ],
       "depends_on": ["T5", "T6"],
-      "branch": "feature/identity-T7-apphost",
-      "worktree": ".claude-worktrees/T7-identity-apphost",
-      "timeout_minutes": 30,
-      "acceptance": ["dotnet build src/LMS.AppHost"]
+      "branch": "feature/courseservice-T7-apphost",
+      "worktree": ".claude-worktrees/T7-courseservice-apphost",
+      "timeout_minutes": 25,
+      "acceptance": ["dotnet build src/LMS.AppHost/LMS.AppHost.csproj"]
     },
     {
       "id": "T8",
-      "title": "Unit + integration tests (xUnit + WebApplicationFactory + Testcontainers Postgres)",
       "agent": "tester",
-      "description": "Cover: header trust 401/403, tenant isolation (cross-tenant 404), upsert idempotency, UserRegistered published once, UserDeactivated publish, invite domain enforcement, role mapping case-insensitivity, validation 400.",
-      "spec": "Use xunit-integration skill. IdentityFactory : WebApplicationFactory<Program>. Testcontainers Postgres + MassTransit InMemoryTestHarness. Files: ProfileEndpointsTests, UsersEndpointsTests, TenantEndpointsTests, TenantIsolationTests, HeaderAuthTests. Categories: Tenant, Endpoints.",
+      "title": "Integration + unit + architecture + contract tests",
+      "spec": "Write tests per contracts.md section 9. Use xunit-integration skill: WebApplicationFactory + Testcontainers Postgres + MassTransit test harness. Tenant isolation pair on /api/courses. Payment gate test (publish IsFree=false -> 409 PAYMENT_REQUIRED). CoursePublished publish-on-success test. Consumer tests: ContentProcessingCompleted updates duration; UserEnrolled increments EnrollmentCount idempotently. Architecture test: every entity in CourseDomain inherits TenantEntity; CourseDbContext has global filter on TenantId. Contract test for CoursePublished record shape.",
       "files": [
-        "tests/LMS.IntegrationTests/Identity/Fixtures/IdentityFactory.cs",
-        "tests/LMS.IntegrationTests/Identity/ProfileEndpointsTests.cs",
-        "tests/LMS.IntegrationTests/Identity/UsersEndpointsTests.cs",
-        "tests/LMS.IntegrationTests/Identity/TenantEndpointsTests.cs",
-        "tests/LMS.IntegrationTests/Identity/TenantIsolationTests.cs",
-        "tests/LMS.IntegrationTests/Identity/HeaderAuthTests.cs",
-        "tests/LMS.IntegrationTests/LMS.IntegrationTests.csproj"
+        "tests/LMS.IntegrationTests/CourseService/",
+        "tests/LMS.ContractTests/Course/CoursePublishedContractTests.cs",
+        "tests/LMS.ArchitectureTests/CourseServiceArchitectureTests.cs"
       ],
       "depends_on": ["T6", "T7"],
-      "branch": "feature/identity-T8-tests",
-      "worktree": ".claude-worktrees/T8-identity-tests",
-      "timeout_minutes": 90,
+      "branch": "feature/courseservice-T8-tests",
+      "worktree": ".claude-worktrees/T8-courseservice-tests",
+      "timeout_minutes": 75,
       "acceptance": [
-        "dotnet test tests/LMS.IntegrationTests --filter Category=Endpoints",
-        "dotnet test tests/LMS.IntegrationTests --filter Category=Tenant"
+        "dotnet test tests/LMS.IntegrationTests --filter FullyQualifiedName~CourseService",
+        "dotnet test tests/LMS.ContractTests --filter FullyQualifiedName~Course",
+        "dotnet test tests/LMS.ArchitectureTests --filter FullyQualifiedName~CourseService"
       ]
     },
     {
       "id": "T9",
-      "title": "Haiku helper — DTO/test data builders + xmldoc polish",
-      "agent": "haiku-helper",
-      "description": "Cheap follow-up to T6: builders for UpsertProfileRequest/InviteUserRequest, xmldoc on public DTOs, OpenAPI summary strings.",
-      "spec": "Add Builders/ folder under tests/LMS.IntegrationTests/Identity/. Add /// xmldoc on DTO records and endpoint group methods. No behaviour changes.",
-      "files": [
-        "tests/LMS.IntegrationTests/Identity/Builders/UpsertProfileRequestBuilder.cs",
-        "tests/LMS.IntegrationTests/Identity/Builders/InviteUserRequestBuilder.cs",
-        "src/services/LMS.IdentityService/LMS.IdentityService.Api/Contracts/Dtos.cs"
-      ],
-      "depends_on": ["T6"],
-      "branch": "feature/identity-T9-haiku",
-      "worktree": ".claude-worktrees/T9-identity-haiku",
-      "timeout_minutes": 20,
-      "acceptance": ["dotnet build"]
+      "agent": "security-auditor",
+      "title": "Tenant isolation + auth audit",
+      "spec": "Run the tenant-isolation skill across CourseService. Verify: (a) every read uses the global query filter AND has explicit TenantId predicate in repos; (b) no endpoint trusts a body-supplied TenantId; (c) consumers honour message TenantId; (d) no JWT validation downstream — only X-* headers; (e) public catalogue endpoints don't leak Draft courses or cross-tenant rows; (f) payment gate cannot be bypassed.",
+      "files": ["src/services/LMS.CourseService/"],
+      "depends_on": ["T8"],
+      "branch": "feature/courseservice-T9-secaudit",
+      "worktree": ".claude-worktrees/T9-courseservice-secaudit",
+      "timeout_minutes": 30,
+      "acceptance": ["audit report with zero high-severity findings"]
     },
     {
       "id": "T10",
-      "title": "Security audit — tenant isolation, header trust, no JWT re-validation",
-      "agent": "security-auditor",
-      "description": "Run tenant-isolation + audit-tenant skills. Verify every entity has TenantEntity, every DbSet has filter, no AddJwtBearer in service, no Authorization header read, no IgnoreQueryFilters.",
-      "spec": "Produce findings inline; block reviewer until clean.",
-      "files": [],
-      "depends_on": ["T6", "T8"],
-      "branch": "feature/identity-T10-secaudit",
-      "worktree": ".claude-worktrees/T10-identity-secaudit",
+      "agent": "reviewer",
+      "title": "Code review against contracts + absolute rules",
+      "spec": "Use code-reviewer skill. Cross-check every entity field, event shape, endpoint path, and DTO against .claude/contracts.md. Verify all LMS absolute backend rules. Verify 4-project layout matches IdentityService.",
+      "files": ["src/services/LMS.CourseService/", "src/LMS.Contracts/Course/", "src/LMS.AppHost/Program.cs"],
+      "depends_on": ["T8", "T9"],
+      "branch": "feature/courseservice-T10-review",
+      "worktree": ".claude-worktrees/T10-courseservice-review",
       "timeout_minutes": 30,
-      "acceptance": [
-        "! grep -rn 'AddJwtBearer' src/services/LMS.IdentityService",
-        "! grep -rn 'IgnoreQueryFilters' src/services/LMS.IdentityService"
-      ]
+      "acceptance": ["review report with all violations resolved or explicitly waived"]
     },
     {
       "id": "T11",
-      "title": "Code review against contracts.md and absolute rules",
-      "agent": "reviewer",
-      "description": "Run code-reviewer skill. Verify shapes match contracts.md exactly, events match LMS.Contracts records, role wire values lowercase, error envelope conformant.",
-      "spec": "Block on any contract or absolute-rule violation.",
-      "files": [],
-      "depends_on": ["T7", "T8", "T9", "T10"],
-      "branch": "feature/identity-T11-review",
-      "worktree": ".claude-worktrees/T11-identity-review",
-      "timeout_minutes": 30,
-      "acceptance": ["dotnet build", "dotnet test tests/LMS.IntegrationTests"]
-    },
-    {
-      "id": "T12",
-      "title": "Docs update — services/identity.md + architecture.md",
       "agent": "docs-writer",
-      "description": "Move docs/identity.md → docs/services/identity.md per layout, mark Phase 1 implemented, document invite-acceptance-via-upsert, link ADR-001/002.",
-      "spec": "Reflect contract refinements (TENANT_NOT_PROVISIONED, kebab role wire form, invite-acceptance behaviour). Update architecture.md AppHost example with identity wiring.",
-      "files": [
-        "docs/services/identity.md",
-        "docs/architecture.md"
-      ],
-      "depends_on": ["T11"],
-      "branch": "feature/identity-T12-docs",
-      "worktree": ".claude-worktrees/T12-identity-docs",
-      "timeout_minutes": 30,
-      "acceptance": ["test -f docs/services/identity.md"]
+      "title": "Sync docs/services/course.md, docs/events.md, docs/architecture.md, README",
+      "spec": "Update docs/services/course.md with shipped endpoints, payment gate, publish flow, consumed events. Update docs/events.md to add EventId to CoursePublished record. Add a paragraph to docs/architecture.md noting CourseService is now wired into AppHost on port 5102. Update README service checklist.",
+      "files": ["docs/services/course.md", "docs/events.md", "docs/architecture.md", "README.md"],
+      "depends_on": ["T10"],
+      "branch": "feature/courseservice-T11-docs",
+      "worktree": ".claude-worktrees/T11-courseservice-docs",
+      "timeout_minutes": 25,
+      "acceptance": ["markdown lints pass"]
     }
   ]
 }
