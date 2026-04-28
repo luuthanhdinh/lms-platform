@@ -113,6 +113,8 @@ internal static class ProgressEndpoints
                     UserId: ctx.UserId,
                     CourseId: request.CourseId,
                     TenantId: ctx.TenantId,
+                    CourseName: null,
+                    LearnerName: null,
                     OccurredAt: now), ct);
             }
 

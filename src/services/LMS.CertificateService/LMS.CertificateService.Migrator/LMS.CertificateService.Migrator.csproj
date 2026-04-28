@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>LMS.CertificateService.Migrator</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LMS.CertificateService.Infrastructure\LMS.CertificateService.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\LMS.ServiceDefaults\LMS.ServiceDefaults.csproj" />
+  </ItemGroup>
+</Project>
